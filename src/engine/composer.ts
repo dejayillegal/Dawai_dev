@@ -510,6 +510,47 @@ export function newProject(P: ComposeParams, o: GenOpts = {}, name?: string): Pr
 const overlaps = (c:Clip,s:Section)=>c.start<s.start+s.bars&&c.start+c.len>s.start;
 const inRange = (bar: number, s: Section) => bar >= s.start - 1e-6 && bar < s.start + s.bars - 1e-6;
 
+function evalLaneExact(lane: AutoLane, bar: number): number {
+  const ps = lane.pts;
+  if (!ps.length) return 0.5;
+  if (bar <= ps[0].bar) return ps[0].v;
+  for (let i = 1; i < ps.length; i++) {
+    if (bar < ps[i].bar) {
+      const a = ps[i - 1], b = ps[i];
+      return b.bar - a.bar < 0.02 ? a.v : a.v + (b.v - a.v) * (bar - a.bar) / (b.bar - a.bar);
+    }
+  }
+  return ps[ps.length - 1].v;
+}
+
+function spliceLaneWithLocks(oldLane: AutoLane, newPts: { bar: number; v: number }[], lockedSecs: Section[]): AutoLane {
+  if (!lockedSecs.length) return { ...oldLane, pts: cleanPts(newPts) };
+  const cleanedNew = cleanPts(newPts).filter(
+    (p) => !lockedSecs.some((s) => p.bar >= s.start - 1e-6 && p.bar <= s.start + s.bars + 1e-6)
+  );
+  const lockedPts: { bar: number; v: number }[] = [];
+  for (const s of lockedSecs) {
+    const a = s.start;
+    const b = s.start + s.bars;
+    lockedPts.push({ bar: a, v: evalLaneExact(oldLane, a) });
+    for (const q of oldLane.pts) {
+      if (q.bar > a && q.bar < b) lockedPts.push({ bar: q.bar, v: q.v });
+    }
+    lockedPts.push({ bar: b, v: evalLaneExact(oldLane, b) });
+  }
+  const combined = [...cleanedNew, ...lockedPts].sort((x, y) => x.bar - y.bar);
+  const dedup: { bar: number; v: number }[] = [];
+  for (const pt of combined) {
+    const prev = dedup[dedup.length - 1];
+    if (prev && Math.abs(pt.bar - prev.bar) < 1e-9) {
+      prev.v = pt.v;
+    } else {
+      dedup.push(pt);
+    }
+  }
+  return { ...oldLane, pts: dedup };
+}
+
 /** Merge a freshly generated result into an existing project, protecting locks, mixer state and manual tracks. */
 export function mergeGenerated(old: Project, gen: GenResult, keepStructure: boolean): Pick<Project, 'tracks' | 'auto' | 'sections' | 'formId'> {
   const lockedSecs = keepStructure ? old.sections.filter((s) => s.lock) : [];
@@ -523,10 +564,17 @@ export function mergeGenerated(old: Project, gen: GenResult, keepStructure: bool
   });
   for (const ot of old.tracks) if (!gen.tracks.some((t) => t.id === ot.id)) tracks.push(ot);
   const lockedIds = new Set(tracks.filter((t) => t.lock).map((t) => t.id));
-  const auto = lockedSecs.length ? old.auto : [
-    ...gen.auto.filter((a) => !lockedIds.has(a.track)),
-    ...old.auto.filter((a) => lockedIds.has(a.track) || (a.track !== 'master' && !gen.tracks.some((t) => t.id === a.track))),
-  ];
+  const auto = lockedSecs.length
+    ? old.auto.map((oldLane) => {
+        if (lockedIds.has(oldLane.track)) return oldLane;
+        const genLane = gen.auto.find((a) => a.id === oldLane.id || (a.track === oldLane.track && a.param === oldLane.param));
+        if (!genLane) return oldLane;
+        return spliceLaneWithLocks(oldLane, genLane.pts, lockedSecs);
+      })
+    : [
+        ...gen.auto.filter((a) => !lockedIds.has(a.track)),
+        ...old.auto.filter((a) => lockedIds.has(a.track) || (a.track !== 'master' && !gen.tracks.some((t) => t.id === a.track))),
+      ];
   const sections = keepStructure ? gen.sections.map((s) => { const o = old.sections.find((x) => x.id === s.id); return o?.lock ? o : o ? { ...s, lock: o.lock } : s; }) : gen.sections;
   return { tracks, auto, sections, formId: gen.formId };
 }
@@ -552,22 +600,25 @@ export function regenSection(old: Project, secId: string, layerOnly?: string): P
     if (!nt) return ot;
     const keepTrack={...ot,clips:structuredClone(ot.clips.filter(c=>!protectedSecs.some(s=>overlaps(c,s))))};
     carve(keepTrack,sec.start,sec.start+sec.bars);
-    const keep=[...keepTrack.clips,...ot.clips.filter(c=>protectedSecs.some(s=>overlaps(c,s)))];
+    const lockedClips=ot.clips.filter(c=>protectedSecs.some(s=>overlaps(c,s)));
     const add = nt.clips.filter(c=>overlaps(c,sec)&&!protectedSecs.some(s=>overlaps(c,s))).map(c=>{
       const start=Math.max(sec.start,c.start),end=Math.min(sec.start+sec.bars,c.start+c.len);
       return {...c,id:`regen_${secSeed[secId]}_${c.id}`,start,len:end-start,off:(c.off+(start-c.start)*16)%c.loop};
     });
-    return { ...ot, clips: [...keep, ...add].sort((a, b) => a.start - b.start) };
+    const unlockedClips=[...keepTrack.clips,...add].sort((a,b)=>a.start-b.start);
+    return { ...ot, clips: [...unlockedClips, ...lockedClips] };
   });
   const auto: AutoLane[] = old.auto.map((lane) => {
     const g = gen.auto.find((a) => a.id === lane.id);
     if (!g || old.tracks.find((t) => t.id === lane.track)?.lock) return lane;
     if (layerOnly && lane.track !== layerOnly && old.tracks.find((t) => t.id === lane.track)?.layer !== layerOnly) return lane;
     const pts = [...lane.pts.filter((p) => !inRange(p.bar, sec)), ...g.pts.filter((p) => inRange(p.bar, sec))];
-    return { ...lane, pts: cleanPts(pts) };
+    return spliceLaneWithLocks(lane, pts, protectedSecs);
   });
-  for (const g of gen.auto) if (!auto.some((a) => a.id === g.id)) auto.push(g);
-  return { tracks, auto:protectedSecs.length?old.auto:auto, secSeed };
+  if (!protectedSecs.length) {
+    for (const g of gen.auto) if (!auto.some((a) => a.id === g.id)) auto.push(g);
+  }
+  return { tracks, auto, secSeed };
 }
 
 export function sectionLayers(style: string) { return STYLES[style].layers.filter((l) => !ATOM_LAYERS.includes(l)); }

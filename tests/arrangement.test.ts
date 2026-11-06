@@ -33,3 +33,17 @@ it('can regenerate unlocked material while retaining a locked section exactly',a
  expect(()=>applyCommand(p,{type:'PATCH',patch})).not.toThrow();
  expect(patch.sections[2]).toEqual(p.sections[2]);
 });
+it('splices automation lanes per-span so unlocked sections update while locked section spans remain protected',async()=>{
+ const {applyCommand}=await import('../src/engine/commands');
+ const p=newProject(defaultParams('acid',101));
+ const lockedSec=p.sections[2];
+ lockedSec.lock=true;
+ const unlockedSec=p.sections[1];
+ // Mutate automation in the unlocked section before regenerating so we can verify it updates
+ const lane=p.auto[0];
+ lane.pts=lane.pts.map(pt=>pt.bar>=unlockedSec.start&&pt.bar<unlockedSec.start+unlockedSec.bars?{...pt,v:0.123}:pt);
+ const r=regenSection(p,unlockedSec.id);
+ expect(()=>applyCommand(p,{type:'PATCH',patch:r})).not.toThrow();
+ const updatedLane=r.auto.find(a=>a.id===lane.id)!;
+ expect(updatedLane.pts.some(pt=>pt.bar>=unlockedSec.start&&pt.bar<unlockedSec.start+unlockedSec.bars&&pt.v!==0.123)).toBe(true);
+});

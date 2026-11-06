@@ -112,8 +112,14 @@ export class Graph {
     const live = new Set<string>();
     for (const t of p.tracks) {
       live.add(t.id);
+      const isNew = !this.strips.has(t.id);
       const s = this.strips.get(t.id) ?? this.createStrip(t);
       const audible = !t.mute && (!anySolo || t.solo);
+      if (isNew) {
+        s.fader.gain.value = t.mute ? 0 : t.vol;
+        s.out.gain.value = audible ? 1 : 0;
+        s.pan.pan.value = t.pan;
+      }
       s.fader.gain.setTargetAtTime(t.mute ? 0 : t.vol, now, 0.015);
       s.out.gain.setTargetAtTime(audible ? 1 : 0,now,0.015);
       const keyConnected=t.synth==='kick'&&this.useWorklet;
@@ -358,7 +364,30 @@ export class Engine {
 // ───────────── offline WAV export (same scheduler + graph) ─────────────
 export type ExportState = 'IDLE' | 'VALIDATING' | 'PREPARING' | 'RENDERING' | 'PROCESSING' | 'ENCODING' | 'SAVING' | 'VERIFYING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export interface ExportResult { blob: Blob; peakDb: number; rmsDb: number; frames: number; seconds: number; sc: 'worklet' | 'fallback'; expectedFrames: number }
-export interface ExportOpts { sampleRate: number; bits: 16 | 24 | 32; onState: (s: ExportState, progress: number, msg?: string) => void; cancelled: () => boolean; allowDegradedSidechain?:boolean }
+export interface ExportOpts {
+  sampleRate: number;
+  bits: 16 | 24 | 32;
+  startBar?: number;
+  endBar?: number;
+  tailSec?: number;
+  onState: (s: ExportState, progress: number, msg?: string) => void;
+  cancelled: () => boolean;
+  allowDegradedSidechain?: boolean;
+}
+
+/** Isolate a single track for stem export while keeping kick sidechain keys active pre-solo. */
+export function isolateStemProject(p: Project, trackId: string): Project {
+  const target = p.tracks.find((t) => t.id === trackId);
+  if (!target) throw new Error(`Missing stem track: ${trackId}`);
+  return {
+    ...p,
+    tracks: p.tracks.map((t) => ({
+      ...t,
+      mute: t.id === trackId ? false : t.synth === 'kick' ? t.mute : true,
+      solo: t.id === trackId,
+    })),
+  };
+}
 
 let exportActive=false;
 export async function renderWav(p: Project, options: ExportOpts): Promise<ExportResult> {
@@ -382,12 +411,22 @@ async function renderWavSnapshot(source:Project,o:ExportOpts,nativeStarted:(rend
   assertProject(source);const p=structuredClone(source);
   if(o.cancelled())throw new Error('CANCELLED');
   if(![44100,48000,96000].includes(o.sampleRate)||![16,24,32].includes(o.bits))throw new Error('Unsupported export format');
-  const bars = totalBars(p);
-  if (!bars || !p.tracks.some((t) => t.clips.length)) throw new Error('Project has no clips to render.');
+  const maxBars = totalBars(p);
+  if (!maxBars || !p.tracks.some((t) => t.clips.length)) throw new Error('Project has no clips to render.');
+  const startBar = o.startBar ?? 0;
+  const endBar = o.endBar ?? maxBars;
+  const tailSec = o.tailSec ?? 4;
+  if (!Number.isFinite(startBar) || !Number.isFinite(endBar) || startBar < 0 || endBar <= startBar || endBar > maxBars) {
+    throw new Error('Invalid export bar range.');
+  }
+  if (!Number.isFinite(tailSec) || tailSec < 0 || tailSec > 30) {
+    throw new Error('Invalid export tail duration.');
+  }
+  const bars = endBar - startBar;
   if (!window.OfflineAudioContext) throw new Error('OfflineAudioContext not supported in this browser.');
   o.onState('PREPARING', 0);
   const sd = stepDurOf(p.params.bpm); const songSec = bars * STEPS_PER_BAR * sd; const sr = o.sampleRate;
-  const frames = Math.ceil((songSec + 4) * sr);
+  const frames = Math.ceil((songSec + tailSec) * sr);
   if(frames*8>256*1024*1024)throw new Error('Export exceeds the 256 MiB PCM budget. Use a shorter range or lower sample rate.');
   const ctx = new OfflineAudioContext(2, frames, sr);
   let wk = false;
@@ -397,11 +436,17 @@ async function renderWavSnapshot(source:Project,o:ExportOpts,nativeStarted:(rend
   const graph = new Graph(ctx, wk, undefined, false,p.params.seed); const sched = new Scheduler(graph);
   let buf:AudioBuffer;
   try{
-    graph.sync(p);sched.scheduleAutomation(p,0,0,true);o.onState('RENDERING',0);
-    const total=bars*STEPS_PER_BAR;
+    graph.sync(p);sched.scheduleAutomation(p,startBar,0,true);o.onState('RENDERING',0);
+    const startStep=startBar*STEPS_PER_BAR;
+    const endStep=endBar*STEPS_PER_BAR;
+    const total=endStep-startStep;
     buf=await renderOfflineWindows(ctx,total,sd,(a,b)=>{
       if(graph.failure)throw new Error(graph.failure);
-      sched.scheduleWindow(p,a,b,s=>s*sd,false,total);
+      if(startStep===0){
+        sched.scheduleWindow(p,a,b,s=>s*sd,false,total);
+      }else{
+        sched.scheduleWindow(p,startStep+a,startStep+b,s=>(s-startStep)*sd,a===0,endStep);
+      }
     },o.cancelled,progress=>o.onState('RENDERING',progress),()=>graph.kill(),nativeStarted);
     if(graph.failure)throw new Error(graph.failure);
   }finally{graph.kill();}

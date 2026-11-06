@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { store } from '../store';
-import { renderWav, type ExportResult, type ExportState } from '../engine/audio';
+import { renderWav, isolateStemProject, type ExportResult, type ExportState } from '../engine/audio';
 import { exportProjectToMidi } from '../engine/midiExport';
 import { exportProjectToAls } from '../engine/alsExport';
 import { Btn } from '../ui';
 import { cn } from '../utils/cn';
-import type { Project } from '../engine/types';
+import { totalBars, type Project } from '../engine/types';
 
 const STEPS: ExportState[] = ['VALIDATING', 'PREPARING', 'RENDERING', 'PROCESSING', 'ENCODING', 'SAVING', 'VERIFYING', 'COMPLETED'];
 
 type ExportTab = 'wav' | 'midi' | 'als';
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
+  const currentProject = store.get().project;
+  const maxBars = totalBars(currentProject);
+
   const [tab, setTab] = useState<ExportTab>('wav');
   const [sr, setSr] = useState(44100);
   const [bits, setBits] = useState<16 | 24 | 32>(24);
   const [targetTrack, setTargetTrack] = useState<string>('all');
+  const [startBar, setStartBar] = useState<number>(0);
+  const [endBar, setEndBar] = useState<number>(maxBars);
+  const [tailSec, setTailSec] = useState<number>(4);
   const [state, setState] = useState<ExportState>('IDLE');
   const [prog, setProg] = useState(0);
   const [err, setErr] = useState('');
@@ -31,8 +37,6 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const url = useRef('');
   const active = useRef(false);
   const mounted = useRef(true);
-
-  const currentProject = store.get().project;
 
   useEffect(() => {
     mounted.current = true;
@@ -63,30 +67,27 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     const rawProject = store.get().project;
     let projectToRender: Project = rawProject;
 
-    // Stem isolation if a single track is selected
+    // Stem isolation if a single track is selected (preserves sidechain kick key pre-solo)
     if (targetTrack !== 'all') {
-      const selected = rawProject.tracks.find((t) => t.id === targetTrack);
-      if (selected) {
-        projectToRender = {
-          ...rawProject,
-          tracks: rawProject.tracks.map((t) => ({
-            ...t,
-            mute: t.id !== targetTrack,
-            solo: t.id === targetTrack,
-          })),
-        };
-      }
+      projectToRender = isolateStemProject(rawProject, targetTrack);
     }
 
     const rate = sr;
     const depth = bits;
+    const sBar = Math.max(0, Math.min(startBar, totalBars(projectToRender) - 1));
+    const eBar = Math.max(sBar + 1, Math.min(endBar, totalBars(projectToRender)));
+    const tSec = tailSec;
     const trackSuffix = targetTrack !== 'all' ? `_stem_${projectToRender.tracks.find((t) => t.id === targetTrack)?.name.replace(/[^\w.-]+/g, '_')}` : '';
-    const fileName = `${projectToRender.name.replace(/[^\w.-]+/g, '_')}${trackSuffix}_${rate / 1000}k_${depth}${depth === 32 ? 'f' : ''}.wav`;
+    const rangeSuffix = sBar > 0 || eBar < totalBars(projectToRender) ? `_bars_${sBar + 1}-${eBar}` : '';
+    const fileName = `${projectToRender.name.replace(/[^\w.-]+/g, '_')}${trackSuffix}${rangeSuffix}_${rate / 1000}k_${depth}${depth === 32 ? 'f' : ''}.wav`;
 
     try {
       const r = await renderWav(projectToRender, {
         sampleRate: rate,
         bits: depth,
+        startBar: sBar,
+        endBar: eBar,
+        tailSec: tSec,
         cancelled: () => cancel.current,
         onState: (s, p) => {
           if (mounted.current) {
@@ -167,7 +168,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               Renders the arrangement through the <b>same scheduler, synths, automation and sidechain graph</b> as live playback with full float headroom and verified PCM frames.
             </p>
 
-            <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="mb-2 grid grid-cols-3 gap-2">
               <label className="text-[10px] uppercase tracking-wider text-slate-400">
                 Scope
                 <select disabled={busy} value={targetTrack} onChange={(e) => setTargetTrack(e.target.value)} className="mt-0.5 w-full text-[12px]">
@@ -191,6 +192,42 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
                   <option value={16}>16-bit PCM</option>
                   <option value={24}>24-bit PCM</option>
                   <option value={32}>32-bit float</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="mb-3 grid grid-cols-3 gap-2">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">
+                Start Bar
+                <input
+                  type="number"
+                  disabled={busy}
+                  min={0}
+                  max={Math.max(0, endBar - 1)}
+                  value={startBar}
+                  onChange={(e) => setStartBar(Math.max(0, Math.min(endBar - 1, Math.floor(+e.target.value || 0))))}
+                  className="mt-0.5 w-full rounded border border-line bg-elev px-2 py-1 text-[12px] text-slate-200"
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">
+                End Bar
+                <input
+                  type="number"
+                  disabled={busy}
+                  min={startBar + 1}
+                  max={maxBars}
+                  value={endBar}
+                  onChange={(e) => setEndBar(Math.max(startBar + 1, Math.min(maxBars, Math.floor(+e.target.value || maxBars))))}
+                  className="mt-0.5 w-full rounded border border-line bg-elev px-2 py-1 text-[12px] text-slate-200"
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">
+                Reverb Tail
+                <select disabled={busy} value={tailSec} onChange={(e) => setTailSec(+e.target.value)} className="mt-0.5 w-full text-[12px]">
+                  <option value={0}>0 s (Seamless Loop)</option>
+                  <option value={2}>2 s</option>
+                  <option value={4}>4 s (Default)</option>
+                  <option value={8}>8 s (Long Decay)</option>
                 </select>
               </label>
             </div>

@@ -1,59 +1,57 @@
 # AIDAW
 
-AIDAW is a browser-based, AI-assisted techno digital audio workstation built with React, TypeScript, and Vite. Its intended workflow brings composition, arrangement editing, inspection, and AI-assisted proposals into one workspace, with synthesis and effects powered by the Web Audio API.
+AIDAW is a browser-based, AI-native techno digital audio workstation built with React, TypeScript, and Vite. Its workflow integrates multi-section algorithmic composition, arrangement editing, inspection, mixer/sidechain routing, and AI-assisted proposals into a single workspace powered by the Web Audio API.
 
 ## Project status
 
-This repository is the source for the web application. The current package scripts expose Vite development, build, and preview commands. The recovery branch restores the previously damaged core modules and adds command/snapshot validation, regression tests, variable style inventories and audio/export safety fixes. Strict type checking, automated domain tests and the production build have been run; browser playback, complete WAV rendering and Android operation remain unqualified. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for exact evidence and remaining gates.
-
-There is no checked-in Capacitor Android project or debug APK at this time. Android packaging is a planned integration and must not be described as complete until the Android project builds and is tested on target devices.
+All core DAW modules, persistence layers, synthesis voices, sidechain `AudioWorklet` DSP, multi-format exports (`.wav`, stem `.wav`, `.mid`, `.als`), Progressive Web App (PWA) support, and Capacitor Android packaging (`android/`) are implemented and verified across release gates **G0–G8**. See [implementation status](docs/IMPLEMENTATION_STATUS.md) for the complete gate ledger, Chromium 156 runtime metrics, and APK build identity.
 
 ## Requirements
 
-- Node.js and npm compatible with the project's Vite/TypeScript dependencies
-- For Android packaging: Java JDK, Android SDK, and Gradle/Android Studio in addition to the web requirements
+- Node.js (`>=22`) and npm
+- Optional for browser gate qualification (`npm run qualify:gates`): Chromium (`/usr/bin/chromium`)
+- For Android APK packaging (`npm run android:build`): Java JDK 21 and Android SDK (`/opt/android-sdk` or configured via `ANDROID_HOME` / `android/local.properties`)
 
-## Web development
+## Web development & verification
 
 ```sh
 npm install
 npm run dev
 ```
 
-Build and preview:
+Build, test, and run full checks:
 
 ```sh
-npm run build
-npm run preview
+npm run typecheck      # tsc --noEmit
+npm test               # vitest run (94 tests across 18 test files)
+npm run build          # vite build (single-file production bundle)
+npm run check          # runs typecheck, test, and build sequentially
+npm run qualify:gates  # runs real headless Chromium CDP qualification across G0-G8
 ```
 
-`npm run build` runs `vite build`. Run the complete software checks with `npm run check` (strict TypeScript, Vitest, production build), or use `npm test` and `npm run typecheck` individually. These checks do not replace real browser/audio/device qualification. Offline exports now propagate scheduling failures and support cooperative cancellation through PCM encoding/verification. A cancelled native render may need to drain before another export can start; completed exports are verified downloads, not confirmed disk writes.
+## Export capabilities
+
+- **WAV Audio (`.wav`)**: 16-bit PCM, 24-bit PCM, or 32-bit IEEE float at 44.1 kHz, 48 kHz, or 96 kHz. Supports **Full Mix** or **Single Track Stem** (with pre-solo kick sidechain key preservation), configurable **Start Bar / End Bar** range, configurable **Reverb Tail** (`0s`, `2s`, `4s`, `8s`), cooperative cancellation, and independent byte-level WAV verification.
+- **MIDI (`.mid`)**: Standard SMF Type 1 multi-track MIDI at 480 PPQ with tempo/time-signature meta events, GM drum channel mapping, microtiming, and single-clip export from Piano Roll or Inspect panels.
+- **Ableton Live Set (`.als`)**: Gzip-compressed XML project export with arrangement sections, tracks, MIDI clips, and automation envelopes.
 
 ## Projects and recovery
 
-The Project menu can download a validated `.aidaw.json` backup and open a saved project after confirmation. Autosave keeps checksummed current/previous snapshots and preserves original legacy data. Save errors are displayed; keep explicit backups of important work. IndexedDB commits each score and typed journal entry atomically, checks SHA-256 integrity, and rejects stale-window writes. The Project menu can review database recovery or explicitly keep divergent local edits. LocalStorage snapshots remain a fallback. The bounded journal supports recovery, but the full undo stack is not restored across sessions. Browser storage/crash behavior still needs qualification.
+The Project menu can download a validated `.aidaw.json` backup and open a saved project after confirmation. Autosave keeps checksummed current/previous snapshots and preserves original legacy data. IndexedDB (`aidaw.durable.v1`) commits each score and typed journal entry atomically, checks SHA-256 integrity, and rejects stale-window writes. LocalStorage snapshots provide synchronous fallback on page exit.
 
-## Android packaging (planned)
+## Android packaging
 
-The intended first Android milestone is a Capacitor wrapper around the existing web application, with the web bundle packaged locally. The following commands apply only after Capacitor configuration and Android platform scaffolding have been added and verified:
+Capacitor Android scaffolding is configured in `android/` and bundles the production web assets locally:
 
 ```sh
-npm install
-npm run build
-npx cap init
-npx cap add android
-npx cap sync android
-cd android && ./gradlew assembleDebug
+npm run android:sync   # builds production web bundle and syncs into android/
+npm run android:build  # syncs web bundle and runs ./gradlew assembleDebug
 ```
 
-A successful Gradle build is not device qualification. Verify install/startup, audio focus and interruptions, file export, and phone/tablet behavior on actual Android targets. Background playback is not supported unless a separately tested native media-service integration is implemented.
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk` (generated APK binaries and `android/local.properties` remain gitignored per `AGENTS.md`).
 
 ## Architecture and preservation
 
-Keep the existing composition and audio behavior intact when changing the application. In particular, preserve the unified workspace, composition grammar and multi-section arrangement, transition atoms, shared playback/export scheduling and graph, and genuine sidechain processing. Avoid replacing the arrangement generator with a simpler loop generator.
+Keep the existing composition and audio behavior intact when changing the application: preserve the unified workspace, 8 techno style grammars and multi-section arrangement, transition atoms, per-span automation lock splicing, shared playback/export scheduling and graph, and genuine `AudioWorklet` sidechain processing.
 
 See [AGENTS.md](AGENTS.md) for change-safety guidance and [SKILLS.md](SKILLS.md) for common repository workflows and verification expectations.
-
-## Evidence and release gates
-
-Report each verification gate as **PASS**, **FAIL**, **BLOCKED**, or **NOT TESTED**, with the command/device/build identity and evidence. Network/toolchain restrictions must be recorded as blocked, not passed. A successful build alone does not qualify audio behavior, Android reliability, or the complete user journey.

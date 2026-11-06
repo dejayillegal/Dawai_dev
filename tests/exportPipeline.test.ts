@@ -79,3 +79,26 @@ it('requires real sidechain for an automated reverb send with a zero static send
  TestOfflineContext.worklet=false;const p=project();p.tracks.forEach(t=>{t.sc=null;t.rev=0;});p.auto=[{id:'send-rise',track:p.tracks[0].id,param:'rev',pts:[{bar:0,v:0},{bar:4,v:0.8}]}];
  await expect(renderWav(p,options())).rejects.toThrow(/sidechain.*unavailable/i);
 });
+it('supports custom bar ranges and configurable reverb tail durations',async()=>{
+ const p=project();
+ const r=await renderWav(p,{...options(),startBar:4,endBar:8,tailSec:2});
+ const calls=vi.mocked(Scheduler.prototype.scheduleWindow).mock.calls;
+ expect(calls.map(c=>[c[1],c[2]])).toEqual([[64,128]]);
+ expect(calls[0][4]).toBe(true); // chase held notes at startBar > 0
+ expect(r.frames).toBe(r.expectedFrames);
+});
+it('isolates a single stem track while retaining unmuted kick sidechain key pre-solo',async()=>{
+ const {isolateStemProject}=await import('../src/engine/audio');
+ const p=project();
+ const bassTrack=p.tracks.find(t=>t.sc==='bass')!;
+ const stemProj=isolateStemProject(p,bassTrack.id);
+ const kick=stemProj.tracks.find(t=>t.synth==='kick')!;
+ const bass=stemProj.tracks.find(t=>t.id===bassTrack.id)!;
+ const other=stemProj.tracks.find(t=>t.id!==bassTrack.id&&t.synth!=='kick')!;
+ expect(bass.solo).toBe(true);
+ expect(bass.mute).toBe(false);
+ expect(kick.solo).toBe(false);
+ expect(kick.mute).toBe(false); // kept unmuted pre-solo so it drives the sidechain detector key
+ expect(other.mute).toBe(true);
+ expect(other.solo).toBe(false);
+});

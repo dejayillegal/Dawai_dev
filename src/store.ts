@@ -188,5 +188,8 @@ export class Store {
 }
 
 export const store = new Store();
+if (typeof globalThis !== 'undefined') {
+  (globalThis as unknown as Record<string, unknown>).__AIDAW_STORE__ = store;
+}
 export const useApp = () => useSyncExternalStore(store.subscribe, store.get);
 export const engine = store.engine;

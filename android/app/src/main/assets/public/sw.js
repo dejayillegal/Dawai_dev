@@ -35,6 +35,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
+  if (event.request.url.includes('/src/') || event.request.url.includes('/@vite/') || event.request.url.includes('/node_modules/')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request).then((networkResponse) => {

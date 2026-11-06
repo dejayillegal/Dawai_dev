@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "android:sync": "npm run build && npx cap sync android",
-    "android:build": "npm run android:sync && cd android && (test -f local.properties || echo 'sdk.dir=/opt/android-sdk' > local.properties) && ./gradlew assembleDebug"
+    "android:build": "npm run android:sync && cd android && (test -f local.properties || echo 'sdk.dir=/opt/android-sdk' > local.properties) && ./gradlew assembleDebug",
+    "qualify:gates": "node scripts/qualify-gates.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
