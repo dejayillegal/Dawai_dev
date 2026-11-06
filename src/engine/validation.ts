@@ -58,7 +58,7 @@ export function assertProject(value: unknown): asserts value is Project {
     if((a.track!=='master'&&!targets.has(a.track))||!['cutoff','res','rev','vol','hp'].includes(a.param)||(a.param==='hp')!==(a.track==='master'))fail('Invalid automation target');
     const key=`${a.track}:${a.param}`;if(bindings.has(key))fail('Duplicate automation binding');bindings.add(key);
     if(!Array.isArray(a.pts)||a.pts.length>100000)fail('Invalid automation points');let last=-1;
-    for(const q of a.pts){num(q.bar,0,8192,'automation time');num(q.v,0,1,'automation value');if(q.bar<last)fail('Unsorted automation');last=q.bar;}
+    for(const q of a.pts){num(q.bar,0,8192,'automation time');num(q.v,0,1,'automation value');if(q.curve!==undefined)num(q.curve,-1,1,'automation curve');if(q.bar<last)fail('Unsorted automation');last=q.bar;}
   }
   if(!p.sc||!p.loop||!p.overrides||!p.secSeed)fail('Missing project configuration');
   flag(p.scOn);flag(p.loop.on);num(p.loop.a,0,4096,'loop start');num(p.loop.b,0,8192,'loop end');if(p.loop.on&&p.loop.b<=p.loop.a)fail('Invalid loop range');
@@ -68,9 +68,13 @@ export function assertProject(value: unknown): asserts value is Project {
 
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 const overlap=(c:Clip,a:number,b:number)=>c.start<b&&c.start+c.len>a;
+export const curveFactor=(t:number,curve?:number)=>{
+ const u=Math.max(0,Math.min(1,t));if(!curve||Math.abs(curve)<1e-4)return u;
+ const c=Math.max(-1,Math.min(1,curve));return c>0?Math.pow(u,1+c*2.6):1-Math.pow(1-u,1-c*2.6);
+};
 const laneValue=(lane:AutoLane,bar:number)=>{
  const ps=lane.pts;if(!ps.length)return 0.5;if(bar<=ps[0].bar)return ps[0].v;
- for(let i=1;i<ps.length;i++)if(bar<ps[i].bar){const a=ps[i-1],b=ps[i];return b.bar-a.bar<0.02?a.v:a.v+(b.v-a.v)*(bar-a.bar)/(b.bar-a.bar);}
+ for(let i=1;i<ps.length;i++)if(bar<ps[i].bar){const a=ps[i-1],b=ps[i];return b.bar-a.bar<0.02?a.v:a.v+(b.v-a.v)*curveFactor((bar-a.bar)/(b.bar-a.bar),b.curve);}
  return ps[ps.length-1].v;
 };
 function protectedLanes(p:Project,a:number,b:number){return p.auto.map(l=>({...l,pts:[{bar:a,v:laneValue(l,a)},...l.pts.filter(q=>q.bar>a&&q.bar<b),{bar:b,v:laneValue(l,b)}]}));}

@@ -62,10 +62,11 @@ const ATOMS = ['RISER', 'IMPACT', 'CRASH', 'DOWNLIFT'];
 
 export const STYLES: Record<string, StyleDef> = {
   hypnotic: {
-    id: 'hypnotic', name: 'Hypnotic Techno', desc: '132–138 BPM · polymetric 3-vs-4, long filter plateaus, deep rumble.',
-    bpm: [132, 138], scales: ['phrygian', 'minor', 'dorian'],
-    layers: ['KICK', 'SUB', 'RUMBLE', 'HAT_C', 'HAT_O', 'SHAKER', 'CLAP', 'PERC1', 'PERC2', 'ACID1', 'STAB', 'PAD', 'DRONE', 'TEX', ...ATOMS],
-    forms: ['plateau', 'peakfirst', 'tool'], swing: 0.54, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [12, 20, 24], prog: [0, 0, 1, 0], dirt: 0.25,
+    id: 'hypnotic', name: 'Hypnotic Techno', desc: '133–137 BPM · warm analog low-mid sequences, subterranean warehouse rumble, rolling tom/conga groove & tape-filtered dub chords.',
+    bpm: [133, 137], scales: ['phrygian', 'minor', 'dorian'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'TOM', 'CONGA', 'HAT_C', 'HAT_O', 'SHAKER', 'PERC1', 'PERC2', 'ARP', 'STAB', 'DUB', 'ACID1', 'DRONE', 'PAD', 'CLAP', 'TEX', ...ATOMS],
+    forms: ['plateau', 'peakfirst', 'tool'], swing: 0.55, cut16: 0.5, cut32: 1, void: 1, kick: 'ghost', poly: [12, 18, 24], prog: [0, 0, 0, 0], dirt: 0.34,
+    thr: { SUB: [0.1, 0.42], RUMBLE: [0.08, 0.35], TOM: [0.16, 0.48], CONGA: [0.18, 0.5], ARP: [0.14, 0.46], STAB: [0.2, 0.54], DUB: [0.18, 0.5], PERC1: [0.14, 0.48], PERC2: [0.22, 0.56], ACID1: [0.26, 0.62], DRONE: [0.12, 0.38], CLAP: [0.65, 0.9] },
   },
   industrial: {
     id: 'industrial', name: 'Industrial Techno', desc: '136–145 BPM · distorted kick, metal clangs, stark pre-drop silence.',
@@ -113,6 +114,34 @@ export const STYLES: Record<string, StyleDef> = {
     layers: ['KICK', 'RUMBLE', 'HAT_O', 'SHAKER', 'PERC2', 'CLANG', 'DUB', 'ARP', 'DRONE', 'PAD', 'TEX', 'CRACKLE', 'RISER', 'IMPACT', 'DOWNLIFT', 'CRASH'],
     forms: ['dub', 'tool', 'acid'], swing: 0.58, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [20, 24, 28], prog: [0, 2, 0, 5], dirt: 0.35,
     thr: { RUMBLE: [0.1, 0.4], DUB: [0.15, 0.45] },
+  },
+  detroit: {
+    id: 'detroit', name: 'Detroit Futuristic', desc: '130–136 BPM · syncopated analog basslines, soulful minor-9th chord stabs, crisp 909 hats & ride drive.',
+    bpm: [130, 136], scales: ['dorian', 'minor', 'phrygian'],
+    layers: ['KICK', 'SUB', 'MIDBASS', 'HAT_C', 'HAT_O', 'RIDE', 'SHAKER', 'CLAP', 'SNARE', 'PERC1', 'STAB', 'DUB', 'ARP', 'PAD', 'TEX', ...ATOMS],
+    forms: ['plateau', 'dual', 'hardgroove'], swing: 0.59, cut16: 0.5, cut32: 1, void: 1, kick: 'ghost', poly: [12, 24], prog: [0, 3, 5, 2], dirt: 0.22,
+    thr: { STAB: [0.3, 0.65], DUB: [0.25, 0.6], ARP: [0.45, 0.8] },
+  },
+  schranz: {
+    id: 'schranz', name: 'Hard / Schranz', desc: '146–152 BPM · overdriven relentless kick, offbeat metallic anvil clangs, filtered loop percussion.',
+    bpm: [146, 152], scales: ['locrian', 'phrygian', 'octatonic'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'MIDBASS', 'HAT_C', 'HAT_O', 'RIDE', 'SHAKER', 'SNARE', 'CLAP', 'PERC1', 'PERC2', 'CLANG', 'TOM', 'ACID1', 'STAB', 'DRONE', 'TEX', ...ATOMS],
+    forms: ['industrial', 'hardgroove', 'peakfirst'], swing: 0.53, cut16: 1, cut32: 2, void: 1, kick: 'stark', poly: [12, 20, 28], prog: [0, 0, 1, 0], dirt: 0.85,
+    thr: { CLANG: [0.3, 0.65], PERC2: [0.35, 0.7], RIDE: [0.55, 0.85] },
+  },
+  minimal_groover: {
+    id: 'minimal_groover', name: 'Minimal Groover', desc: '126–131 BPM · stripped micro-percussion, tight rolling sub-bass, polymetric conga clicks & dub throws.',
+    bpm: [126, 131], scales: ['dorian', 'phrygian', 'minor'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'HAT_C', 'HAT_O', 'SHAKER', 'CLAP', 'PERC1', 'PERC2', 'CONGA', 'STAB', 'DUB', 'ACID1', 'DRONE', 'CRACKLE', ...ATOMS],
+    forms: ['tool', 'plateau', 'dub'], swing: 0.6, cut16: 0.5, cut32: 1, void: 1, kick: 'ghost', poly: [12, 18, 24], prog: [0, 0, 3, 0], dirt: 0.2,
+    thr: { PERC1: [0.2, 0.5], PERC2: [0.3, 0.65], CONGA: [0.25, 0.6], DUB: [0.25, 0.55] },
+  },
+  mental_tribal: {
+    id: 'mental_tribal', name: 'Mental / Tribal Polyrhythm', desc: '136–142 BPM · interlocking 3-against-4 tribal congas/toms, cyclic FM sequences & relentless low-end drive.',
+    bpm: [136, 142], scales: ['phrygian', 'octatonic', 'locrian'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'MIDBASS', 'HAT_C', 'HAT_O', 'SHAKER', 'CLAP', 'PERC1', 'PERC2', 'CONGA', 'TOM', 'ACID1', 'ARP', 'STAB', 'DRONE', 'TEX', ...ATOMS],
+    forms: ['plateau', 'hardgroove', 'peakfirst'], swing: 0.57, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [12, 18, 20, 24], prog: [0, 1, 0, 2], dirt: 0.38,
+    thr: { CONGA: [0.2, 0.55], TOM: [0.3, 0.65], PERC2: [0.3, 0.65], ARP: [0.4, 0.75] },
   },
 };
 
@@ -167,14 +196,14 @@ export const ROLE_COLORS: Record<SectionRole, string> = {
 
 /** subtractive rules: layers killed / forced-to-level for a role (applied on top of energy mapping) */
 export const ROLE_RULES: Record<SectionRole, { kill: string[]; boost: Record<string, number> }> = {
-  INTRO: { kill: ['MIDBASS', 'ACID2', 'LEAD', 'CLAP', 'RIDE', 'CLANG', 'STAB', 'ARP', 'SNARE', 'SUB'], boost: { PAD: 0.3, PERC1: 0.35, SHAKER: 0.3 } },
-  GROOVE_BUILD: { kill: ['ACID2', 'LEAD', 'RIDE', 'CLANG'], boost: {} },
-  BASS_ENTRANCE: { kill: ['ACID2', 'LEAD', 'RIDE'], boost: { SUB: 0.7 } },
-  PLATEAU: { kill: ['RIDE', 'LEAD'], boost: {} },
-  REDUCTION: { kill: ['KICK', 'SUB', 'RUMBLE', 'MIDBASS', 'CLAP', 'SNARE', 'RIDE', 'CLANG', 'TOM', 'HAT_O', 'ACID2', 'LEAD'], boost: { PAD: 0.9, DRONE: 0.8, DUB: 0.8, TEX: 0.7, ACID1: 0.5, ARP: 0.5, PERC2: 0.4, HAT_C: 0.3, CRACKLE: 0.6 } },
-  BUILD_UP: { kill: ['SUB', 'RUMBLE', 'RIDE', 'LEAD'], boost: { SNARE: 0.7, PERC2: 0.7, HAT_C: 0.8, PAD: 0.6 } },
-  DROP_PRIMARY: { kill: ['RIDE', 'ACID2'], boost: {} },
-  VARIATION: { kill: ['RIDE'], boost: {} },
-  DROP_PEAK: { kill: [], boost: { RIDE: 0.9, CLANG: 0.8 } },
-  OUTRO: { kill: ['ACID2', 'LEAD', 'RIDE', 'CRASH', 'CLANG', 'STAB'], boost: {} },
+  INTRO: { kill: ['MIDBASS', 'ACID2', 'LEAD', 'CLAP', 'RIDE', 'CLANG', 'SNARE'], boost: { RUMBLE: 0.52, SUB: 0.42, TOM: 0.44, CONGA: 0.4, ARP: 0.46, STAB: 0.38, DRONE: 0.48, DUB: 0.4, PAD: 0.32, PERC1: 0.44, SHAKER: 0.38, HAT_C: 0.35 } },
+  GROOVE_BUILD: { kill: ['ACID2', 'LEAD', 'RIDE', 'CLANG'], boost: { RUMBLE: 0.68, SUB: 0.64, TOM: 0.58, CONGA: 0.55, ARP: 0.62, STAB: 0.52, DUB: 0.52, PERC1: 0.56, PERC2: 0.5 } },
+  BASS_ENTRANCE: { kill: ['ACID2', 'LEAD', 'RIDE'], boost: { SUB: 0.78, RUMBLE: 0.76, TOM: 0.65, STAB: 0.6 } },
+  PLATEAU: { kill: ['RIDE', 'LEAD'], boost: { ARP: 0.78, STAB: 0.72, ACID1: 0.7, RUMBLE: 0.8, TOM: 0.7 } },
+  REDUCTION: { kill: ['KICK', 'SUB', 'RUMBLE', 'MIDBASS', 'CLAP', 'SNARE', 'RIDE', 'CLANG', 'TOM', 'HAT_O', 'ACID2', 'LEAD'], boost: { PAD: 0.9, DRONE: 0.85, DUB: 0.84, STAB: 0.62, TEX: 0.7, ACID1: 0.58, ARP: 0.7, PERC2: 0.45, HAT_C: 0.3, CRACKLE: 0.6 } },
+  BUILD_UP: { kill: ['SUB', 'RUMBLE', 'RIDE', 'LEAD'], boost: { SNARE: 0.7, PERC2: 0.7, HAT_C: 0.8, PAD: 0.6, ARP: 0.74, STAB: 0.68 } },
+  DROP_PRIMARY: { kill: ['RIDE', 'ACID2'], boost: { ARP: 0.84, STAB: 0.78, RUMBLE: 0.86, SUB: 0.86, TOM: 0.76 } },
+  VARIATION: { kill: ['RIDE'], boost: { ARP: 0.8, STAB: 0.74, PERC2: 0.75, CONGA: 0.72 } },
+  DROP_PEAK: { kill: [], boost: { RIDE: 0.9, CLANG: 0.8, ARP: 0.92, STAB: 0.88, ACID1: 0.88, TOM: 0.85 } },
+  OUTRO: { kill: ['ACID2', 'LEAD', 'RIDE', 'CRASH', 'CLANG'], boost: { RUMBLE: 0.54, DRONE: 0.55, TOM: 0.42 } },
 };

@@ -22,6 +22,7 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, fmt, dis
 export function RotaryKnob({
   label,
   value,
+  liveValue,
   min,
   max,
   step = 0.01,
@@ -37,6 +38,7 @@ export function RotaryKnob({
 }: {
   label: string;
   value: number;
+  liveValue?: number;
   min: number;
   max: number;
   step?: number;
@@ -53,7 +55,8 @@ export function RotaryKnob({
   const dragRef = useRef<{ startY: number; startVal: number } | null>(null);
   const lastTapRef = useRef<number>(0);
   const span = Math.max(1e-9, max - min);
-  const norm = Math.max(0, Math.min(1, (value - min) / span));
+  const displayVal = liveValue !== undefined ? liveValue : value;
+  const norm = Math.max(0, Math.min(1, (displayVal - min) / span));
 
   // Angles: 135 deg (bottom-left) to 405 deg (bottom-right) -> 270 deg sweep
   const startAngle = 135;
@@ -68,13 +71,13 @@ export function RotaryKnob({
     return { x: cx + rad * Math.cos(a), y: cy + rad * Math.sin(a) };
   };
 
-  const arcPath = (fromDeg: number, toDeg: number) => {
+  const arcPath = (fromDeg: number, toDeg: number, rad = r) => {
     const diff = Math.abs(toDeg - fromDeg);
     if (diff < 0.5) return '';
-    const s = polar(Math.min(fromDeg, toDeg));
-    const e = polar(Math.max(fromDeg, toDeg));
+    const s = polar(Math.min(fromDeg, toDeg), rad);
+    const e = polar(Math.max(fromDeg, toDeg), rad);
     const large = diff > 180 ? 1 : 0;
-    return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
+    return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${rad.toFixed(2)} ${rad.toFixed(2)} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
   };
 
   const clampStep = (raw: number) => {
@@ -122,15 +125,15 @@ export function RotaryKnob({
   const needleInner = polar(valAngle, r * 0.28);
   const needleOuter = polar(valAngle, r * 0.86);
   const activeColor = automated ? '#06b6d4' : color;
-  const formatted = fmt ? fmt(value) : step >= 1 ? String(Math.round(value)) : value.toFixed(2);
+  const formatted = fmt ? fmt(displayVal) : step >= 1 ? String(Math.round(displayVal)) : displayVal.toFixed(2);
 
   return (
     <div
       className={cn(
         'group relative flex flex-col items-center select-none',
-        disabled ? 'opacity-40 pointer-events-none' : 'cursor-ns-resize'
+        disabled ? 'opacity-45 pointer-events-none' : 'cursor-ns-resize'
       )}
-      title={hint ?? `${label}: ${formatted} (drag vertically, double-tap to reset)`}
+      title={hint ?? `${label}: ${formatted} (drag vertically, Shift for fine tune, double-tap to reset)`}
     >
       <div
         onPointerDown={onPointerDown}
@@ -195,7 +198,7 @@ export function RotaryKnob({
         {automated && (
           <span
             className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-cyan shadow-[0_0_6px_#06b6d4]"
-            title="Automated parameter"
+            title="Automated parameter (live playback follower)"
           />
         )}
       </div>

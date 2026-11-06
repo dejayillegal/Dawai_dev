@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DurableLoad } from '../engine/durablePersistence';
 import type { Project } from '../engine/types';
 import { decodeSnapshot, encodeSnapshot } from '../engine/persistence';
+import { downloadProjectMidi } from '../engine/midiExport';
 import { store, useApp } from '../store';
 import { seek, toggleLoop } from '../actions';
 import { Btn } from '../ui';
@@ -56,6 +57,20 @@ export function ProjectFiles({ compact }: { compact: boolean }) {
     }
   };
 
+  const exportMidiNow = () => {
+    try {
+      const out = downloadProjectMidi(store.get().project);
+      urls.current.add(out.url);
+      setTimeout(() => {
+        URL.revokeObjectURL(out.url);
+        urls.current.delete(out.url);
+      }, 2000);
+      setOpen(false);
+    } catch (error) {
+      store.reportError(error);
+    }
+  };
+
   return (
     <>
       <div ref={menuRef} className="relative shrink-0">
@@ -84,6 +99,7 @@ export function ProjectFiles({ compact }: { compact: boolean }) {
               </button>
             </div>
             <Btn onClick={save}>Download project backup</Btn>
+            <Btn tone="cyan" onClick={exportMidiNow}>Export MIDI File (SMF Type 1)</Btn>
             <Btn
               onClick={() => {
                 setOpen(false);

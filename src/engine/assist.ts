@@ -46,18 +46,49 @@ function keepLocked(base: Project, tracks: Track[]): Track[] {
   return tracks.map((t) => { const o = base.tracks.find((x) => x.id === t.id); return o && o.lock ? o : t; });
 }
 
-function putLane(auto: AutoLane[], track: string, param: AutoParam, pts: { bar: number; v: number }[], replaceRange?: [number, number]) {
+function putLane(auto: AutoLane[], track: string, param: AutoParam, pts: { bar: number; v: number; curve?: number }[], replaceRange?: [number, number]) {
   let lane = auto.find((a) => a.track === track && a.param === param);
   if (!lane) { lane = { id: `a_${track}_${param}`, track, param, pts: [] }; auto.push(lane); }
   let cur = lane.pts;
   if (replaceRange) cur = cur.filter((p) => p.bar < replaceRange[0] - 0.001 || p.bar > replaceRange[1] + 0.001);
   const all = [...cur, ...pts].sort((a, b) => a.bar - b.bar);
   const out: typeof all = [];
-  for (const p of all) { const l = out[out.length - 1]; if (l && p.bar - l.bar < 0.004) l.v = p.v; else out.push({ bar: +p.bar.toFixed(3), v: +clamp(p.v).toFixed(3) }); }
+  for (const p of all) {
+    const l = out[out.length - 1];
+    const c = p.curve !== undefined && Math.abs(p.curve) >= 0.005 ? +clamp(p.curve, -1, 1).toFixed(3) : undefined;
+    if (l && p.bar - l.bar < 0.004) {
+      l.v = +clamp(p.v).toFixed(3);
+      if (c !== undefined) l.curve = c;
+      else delete l.curve;
+    } else {
+      const nextPt: { bar: number; v: number; curve?: number } = { bar: +p.bar.toFixed(3), v: +clamp(p.v).toFixed(3) };
+      if (c !== undefined) nextPt.curve = c;
+      out.push(nextPt);
+    }
+  }
   lane.pts = out;
 }
 
 const findSec = (p: Project, bar: number) => p.sections.find((s) => bar >= s.start && bar < s.start + s.bars);
+
+export type UndergroundLayerKind =
+  | 'hypnotic_fm'
+  | 'sub_rumble'
+  | 'dub_chord'
+  | 'acid_303'
+  | 'tribal_poly'
+  | 'industrial_clang'
+  | 'top_ride';
+
+export const UNDERGROUND_ELEMENT_PRESETS: { id: UndergroundLayerKind; label: string; badge: string; desc: string }[] = [
+  { id: 'hypnotic_fm', label: 'Hypnotic Analog Sequence', badge: '12-step Poly', desc: 'Polymetric 12-step warm analog VCO sequence with 24dB ladder filter tension arc' },
+  { id: 'sub_rumble', label: 'Warehouse Sub-Rumble', badge: 'Low-End', desc: 'Phase-locked offbeat sub-rumble engine routed to Bass sidechain bus' },
+  { id: 'dub_chord', label: 'Dub Delay Chord Tank', badge: '24-step Dub', desc: 'Tape-filtered analog dub chords feeding 3/16 dotted echo & dark vault reverb' },
+  { id: 'acid_303', label: '303 Acid Roller / Screamer', badge: 'TB-303', desc: 'Accented & sliding diode-ladder acid line with curved cutoff & resonance sweeps' },
+  { id: 'tribal_poly', label: 'Tribal Conga Polyrhythm', badge: '3-vs-4 Groove', desc: 'Interlocking Euclidean conga & low-mid tom percussion with ghost swing' },
+  { id: 'industrial_clang', label: 'Industrial Anvil Clang', badge: 'Metallic', desc: 'Syncopated metallic clang loop with aggressive peak-drop emphasis' },
+  { id: 'top_ride', label: '909 Ride & Shaker Driver', badge: 'Top Loop', desc: 'Warm 909 metallic offbeat ride & micro-timed 16th shaker momentum layer' },
+];
 
 // ───────────── actions ─────────────
 export function actFull(p: Project): Proposal {
@@ -87,8 +118,8 @@ export function actTransition(p: Project, bar: number, kind: 'up' | 'down' = 'up
   const room = sec ? Math.max(2, Math.min(8, bar - sec.start)) : 4;
   addTransition(tracks, style, bar, kind === 'up' ? 0.4 : -0.4, room, new Rng(hash(p.params.seed, 'ai', bar)), kind);
   if (kind === 'up') {
-    putLane(auto, 'master', 'hp', [{ bar: bar - room, v: 0 }, { bar: bar - 0.01, v: 0.78 }, { bar: bar, v: 0 }], [bar - room, bar]);
-    for (const t of tracks) if (['ACID1', 'ACID2', 'STAB', 'LEAD', 'MIDBASS'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar: bar - Math.min(8, room), v: 0.45 }, { bar: bar - 0.01, v: 0.98 }, { bar, v: 0.5 }], [bar - Math.min(8, room), bar]);
+    putLane(auto, 'master', 'hp', [{ bar: bar - room, v: 0 }, { bar: bar - 0.01, v: 0.78, curve: 0.45 }, { bar: bar, v: 0 }], [bar - room, bar]);
+    for (const t of tracks) if (['ACID1', 'ACID2', 'STAB', 'LEAD', 'MIDBASS'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar: bar - Math.min(8, room), v: 0.45 }, { bar: bar - 0.01, v: 0.98, curve: 0.4 }, { bar, v: 0.5 }], [bar - Math.min(8, room), bar]);
   }
   return buildProposal(p, `${kind === 'up' ? 'Transition package' : 'Downlift package'} at bar ${bar + 1}`, kind === 'up' ? `${room}-bar riser, accelerating snare/perc roll, ${style.void}-bar low-end void, reverse swell, sub impact + crash on beat 1, master high-pass sweep and filter ramps.` : 'Long downlifter + noise wash on beat 1 of the reduction.', { tracks: keepLocked(p, tracks), auto });
 }
@@ -99,8 +130,8 @@ export function actReduction(p: Project, bar: number, len: number): Proposal {
   addTransition(tracks, style, bar, -0.4, 4, new Rng(hash(p.params.seed, 'red', bar)), 'down');
   addTransition(tracks, style, bar + len, 0.4, Math.min(len, 8), new Rng(hash(p.params.seed, 'redE', bar)), 'up');
   for (const t of tracks) {
-    if (['ACID1', 'ARP'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar, v: 0.3 }, { bar: bar + len - 0.01, v: 0.92 }], [bar, bar + len]);
-    if (['PAD', 'DRONE', 'DUB'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar, v: 0.3 }, { bar: bar + len - 0.01, v: 0.9 }], [bar, bar + len]);
+    if (['ACID1', 'ARP'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar, v: 0.3 }, { bar: bar + len - 0.01, v: 0.92, curve: 0.35 }], [bar, bar + len]);
+    if (['PAD', 'DRONE', 'DUB'].includes(t.layer)) putLane(auto, t.id, 'cutoff', [{ bar, v: 0.3 }, { bar: bar + len - 0.01, v: 0.9, curve: -0.3 }], [bar, bar + len]);
     if (t.layer === 'PAD' || t.layer === 'DUB') putLane(auto, t.id, 'rev', [{ bar, v: t.rev }, { bar: bar + 1, v: Math.min(0.95, t.rev + 0.35) }, { bar: bar + len - 0.01, v: Math.min(0.95, t.rev + 0.35) }, { bar: bar + len, v: t.rev }], [bar, bar + len]);
   }
   return buildProposal(p, `${len}-bar tension reduction at bar ${bar + 1}`, `Kick, sub, rolling bass and backbeat drop out for ${len} bars; acid/pad cutoff and reverb automation build tension; downlifter in, riser + void + impact out.`, { tracks: keepLocked(p, tracks), auto });
@@ -117,11 +148,12 @@ export function actSidechain(p: Project): Proposal {
 
 export function actPoly(p: Project): Proposal {
   const rng = new Rng(hash(p.params.seed, 'poly', p.tracks.length));
+  const R = 24 + p.params.key;
   const n = rng.pick([12, 20, 28]); const k = clamp(Math.round(n * 0.4), 3, n - 2); const rot = rng.int(0, n - 1);
-  const pat = euclid(k, n, rot); const pool = [64, 67, 71, 74, 76];
-  const notes = pat.flatMap((h, i) => (h ? [{ t: i, d: 0.7, p: rng.pick(pool), v: 0.45 + rng.next() * 0.45 }] : []));
+  const pat = euclid(k, n, rot); const pool = [R + 12, R + 15, R + 17, R + 19, R + 24];
+  const notes = pat.flatMap((h, i) => (h ? [{ t: i, d: 0.75, p: rng.pick(pool), v: 0.48 + rng.next() * 0.38 }] : []));
   const id = uid('t');
-  const track: Track = { id, layer: `POLY_${id}`, name: `Polymetric Perc · E(${k},${n})`, color: '#2dd4bf', group: 'Groove', synth: 'perc', vol: 0.4, pan: rng.pick([-0.4, 0.4]), mute: false, solo: false, lock: false, sc: null, rev: 0.25, del: 0.3, cutoff: 0.5, res: 0.3, clips: [] };
+  const track: Track = { id, layer: `POLY_${id}`, name: `Polymetric Perc · E(${k},${n})`, color: '#2dd4bf', group: 'Groove', synth: 'perc', vol: 0.4, pan: rng.pick([-0.4, 0.4]), mute: false, solo: false, lock: false, sc: null, rev: 0.25, del: 0.3, cutoff: 0.48, res: 0.3, clips: [] };
   for (const s of p.sections) {
     if (s.energy < 0.5 || s.role === 'REDUCTION') continue;
     for (let c = 0; c < s.bars; c += 16) {
@@ -133,6 +165,113 @@ export function actPoly(p: Project): Proposal {
   const idx = p.tracks.findIndex((t) => t.group === 'Character');
   const tracks = [...p.tracks]; tracks.splice(idx < 0 ? tracks.length : idx, 0, track);
   return buildProposal(p, 'Polymetric hardgroove percussion layer', `New ${n}-step Euclidean loop E(${k},${n}) running against the 16-step grid (${n}:16 phase drift). Density halves every other phrase; present in every section above 0.5 energy except reductions.`, { tracks });
+}
+
+/**
+ * Smart Underground Producer AI Layer & Element Generator:
+ * Synthesizes a new context-aware underground techno track + clips + Bezier filter/send automation
+ * tailored to the current project key, scale, tempo, section energies, and lock constraints.
+ */
+export function actAddUndergroundLayer(p: Project, kind: UndergroundLayerKind): Proposal {
+  const id = uid('t');
+  const R = 24 + p.params.key;
+  const total = Math.max(32, totalBars(p));
+  const auto = clone(p.auto);
+
+  const specMap: Record<UndergroundLayerKind, {
+    baseLayer: string; name: string; color: string; group: Track['group']; synth: Track['synth'];
+    sc: Track['sc']; vol: number; pan: number; rev: number; del: number; minE: number; inReduction: boolean;
+  }> = {
+    hypnotic_fm: { baseLayer: 'ARP', name: 'Hypnotic FM Sequence', color: '#eab308', group: 'Character', synth: 'arp', sc: 'harm', vol: 0.38, pan: -0.22, rev: 0.28, del: 0.38, minE: 0.32, inReduction: true },
+    sub_rumble: { baseLayer: 'RUMBLE', name: 'Warehouse Sub-Rumble', color: '#fb7185', group: 'Foundation', synth: 'rumble', sc: 'bass', vol: 0.54, pan: 0, rev: 0.22, del: 0, minE: 0.42, inReduction: false },
+    dub_chord: { baseLayer: 'DUB', name: 'Dub Chord Delay Tank', color: '#c084fc', group: 'Harmony', synth: 'dubchord', sc: 'harm', vol: 0.4, pan: 0.16, rev: 0.48, del: 0.65, minE: 0.22, inReduction: true },
+    acid_303: { baseLayer: 'ACID1', name: '303 Acid Sequence', color: '#f59e0b', group: 'Character', synth: 'acid', sc: null, vol: 0.46, pan: 0.12, rev: 0.16, del: 0.25, minE: 0.45, inReduction: true },
+    tribal_poly: { baseLayer: 'CONGA', name: 'Tribal Conga Polyrhythm', color: '#34d399', group: 'Groove', synth: 'conga', sc: null, vol: 0.44, pan: -0.25, rev: 0.14, del: 0.12, minE: 0.35, inReduction: false },
+    industrial_clang: { baseLayer: 'CLANG', name: 'Industrial Anvil Clang', color: '#a3a3a3', group: 'Groove', synth: 'clang', sc: null, vol: 0.35, pan: 0.28, rev: 0.32, del: 0.22, minE: 0.55, inReduction: false },
+    top_ride: { baseLayer: 'RIDE', name: '909 Ride Top Driver', color: '#67e8f9', group: 'Groove', synth: 'ride', sc: null, vol: 0.32, pan: 0.18, rev: 0.18, del: 0.05, minE: 0.58, inReduction: false },
+  };
+
+  const sp = specMap[kind];
+  const candidate = generate(
+    { ...p.params, seed: hash(p.params.seed, kind, p.tracks.length), density: Math.max(0.75, p.params.density) },
+    { layers: [sp.baseLayer], sections: p.sections }
+  ).tracks[0];
+
+  const track: Track = {
+    id,
+    layer: `AI_${kind.toUpperCase()}_${id}`,
+    name: sp.name,
+    color: sp.color,
+    group: sp.group,
+    synth: sp.synth,
+    vol: sp.vol,
+    pan: sp.pan,
+    mute: false,
+    solo: false,
+    lock: false,
+    sc: sp.sc,
+    rev: sp.rev,
+    del: sp.del,
+    cutoff: 0.5,
+    res: kind === 'acid_303' ? 0.52 : 0.32,
+    clips: [],
+  };
+
+  // Build authentic underground clips per unlocked section
+  for (const sec of p.sections) {
+    if (sec.lock) continue;
+    if (!sp.inReduction && sec.role === 'REDUCTION') continue;
+    if (sec.energy < sp.minE && !(sp.inReduction && sec.role === 'REDUCTION')) continue;
+
+    const baseClip = candidate?.clips.find((c) => c.start >= sec.start && c.start < sec.start + sec.bars);
+    const loop = kind === 'hypnotic_fm' || kind === 'tribal_poly' ? 12 : kind === 'dub_chord' ? 24 : baseClip?.loop ?? 16;
+    const notes = baseClip?.notes.length
+      ? baseClip.notes.map((n) => ({ ...n }))
+      : [
+          { t: 0, d: 1, p: R + 24, v: 0.8 },
+          { t: 3, d: 0.8, p: R + 25, v: 0.72, acc: true },
+          { t: 7, d: 1.1, p: R + 31, v: 0.85, slide: true },
+          { t: 10, d: 0.8, p: R + 24, v: 0.68 },
+        ];
+
+    const phrase = kind === 'dub_chord' ? 12 : 16;
+    for (let off = 0; off < sec.bars; off += phrase) {
+      const len = Math.min(phrase, sec.bars - off);
+      const start = sec.start + off;
+      track.clips.push(mkClip(start, len, loop, notes.map((n) => ({ ...n })), `${sp.name} · ${sec.name}`, start * 16));
+    }
+  }
+
+  // Add curved Bezier filter automation for melodic/character/harmony layers (when no section locks freeze auto lanes)
+  const hasLockedSec = p.sections.some((s) => s.lock);
+  if (!hasLockedSec && ['hypnotic_fm', 'dub_chord', 'acid_303'].includes(kind)) {
+    const pts: { bar: number; v: number; curve?: number }[] = [{ bar: 0, v: 0.28 }];
+    for (const sec of p.sections) {
+      if (sec.lock) continue;
+      const end = sec.start + sec.bars;
+      if (sec.role === 'DROP_PEAK' || sec.role === 'BUILD_UP') {
+        pts.push({ bar: sec.start, v: 0.42 }, { bar: end - 0.02, v: 0.92, curve: 0.48 });
+      } else if (sec.role === 'REDUCTION') {
+        pts.push({ bar: sec.start, v: 0.3 }, { bar: end - 0.02, v: 0.84, curve: -0.4 });
+      } else {
+        pts.push({ bar: sec.start, v: 0.36 }, { bar: end - 0.02, v: 0.68, curve: 0.25 });
+      }
+    }
+    pts.push({ bar: total, v: 0.32 });
+    putLane(auto, track.id, 'cutoff', pts);
+  }
+
+  // Insert track in group order
+  const tracks = [...p.tracks];
+  const insertAt = tracks.findIndex((t) => t.group === 'Transition');
+  tracks.splice(insertAt < 0 ? tracks.length : insertAt, 0, track);
+
+  return buildProposal(
+    p,
+    `Add AI Layer: ${sp.name}`,
+    `Synthesized ${sp.name} (${sp.synth}, ${track.clips.length} clips across active sections, routed to ${sp.sc ? `SC ${sp.sc.toUpperCase()}` : 'Master'}${['hypnotic_fm', 'dub_chord', 'acid_303'].includes(kind) ? ' with curved Bezier filter automation' : ''}). Locked sections/tracks untouched.`,
+    { tracks: keepLocked(p, tracks), auto }
+  );
 }
 
 export function actVariation(p: Project, secId?: string): Proposal {
@@ -152,11 +291,11 @@ export function actVariation(p: Project, secId?: string): Proposal {
 export function actSweep(p: Project, trackId?: string): Proposal {
   const t = p.tracks.find((x) => x.id === trackId && x.group !== 'Transition') ?? p.tracks.find((x) => x.layer === 'ACID1') ?? p.tracks.find((x) => ['acid', 'stab', 'pad', 'midbass'].includes(x.synth));
   if (!t) return buildProposal(p, 'No filter target', 'No filterable track available.', {});
-  const auto = clone(p.auto); const total = totalBars(p); const pts: { bar: number; v: number }[] = [];
-  for (let b = 0; b < total; b += 32) { pts.push({ bar: b, v: 0.25 }, { bar: Math.min(total, b + 32) - 0.01, v: 0.92 }); }
+  const auto = clone(p.auto); const total = totalBars(p); const pts: { bar: number; v: number; curve?: number }[] = [];
+  for (let b = 0; b < total; b += 32) { pts.push({ bar: b, v: 0.25 }, { bar: Math.min(total, b + 32) - 0.01, v: 0.92, curve: 0.42 }); }
   const lane = auto.find((a) => a.track === t.id && a.param === 'cutoff');
   if (lane) lane.pts = pts; else auto.push({ id: `a_${t.id}_cutoff`, track: t.id, param: 'cutoff', pts });
-  return buildProposal(p, `32-bar filter sweeps on ${t.name}`, 'Cutoff creeps from 0.25 → 0.92 over each 32-bar block and snaps back at the boundary (evaluated as a sample-accurate AudioParam ramp, no zipper noise).', { auto });
+  return buildProposal(p, `32-bar Bezier filter sweeps on ${t.name}`, 'Cutoff rises along an exponential Bezier tension curve (0.25 → 0.92) over each 32-bar block and snaps back at the boundary (scheduled onto the AudioParam timeline).', { auto });
 }
 
 export function actMix(p: Project): Proposal {
@@ -182,7 +321,7 @@ export function actTransitionsEverywhere(p: Project): Proposal {
     const has = tracks.filter((t) => t.group === 'Transition').some((t) => t.clips.some((c) => c.start >= B - 9 && c.start <= B + 0.01));
     if (has) return;
     addTransition(tracks, style, B, d, s.bars, new Rng(hash(p.params.seed, 'fixT', i)));
-    if (d > 0.25) putLane(auto, 'master', 'hp', [{ bar: B - Math.min(8, s.bars), v: 0 }, { bar: B - 0.01, v: 0.78 }, { bar: B, v: 0 }], [B - Math.min(8, s.bars), B]);
+    if (d > 0.25) putLane(auto, 'master', 'hp', [{ bar: B - Math.min(8, s.bars), v: 0 }, { bar: B - 0.01, v: 0.78, curve: 0.45 }, { bar: B, v: 0 }], [B - Math.min(8, s.bars), B]);
   });
   return buildProposal(p, 'Add missing transition atoms', 'Every macro boundary without risers/impacts/downlifters receives an energy-delta-driven transition package.', { tracks: keepLocked(p, tracks), auto });
 }
@@ -211,6 +350,9 @@ export function fixFor(p: Project, fix: FixId): Proposal {
 // ───────────── natural-language interpreter (deterministic, offline) ─────────────
 export const QUICK_ACTIONS = [
   'Generate a full evolving arrangement',
+  'Add a hypnotic FM sequence layer',
+  'Add a dub chord delay tank layer',
+  'Add a warehouse sub-rumble layer',
   'Add sidechain ducking from Kick to Sub-Bass and Pad',
   'Generate a polymetric hardgroove percussion layer',
   'Create a 16-bar tension reduction at bar 97',
@@ -236,8 +378,16 @@ export function interpret(text: string, p: Project, sel: Selection, playBar: num
     for (const [re, f] of words) if (re.test(t)) return p.sections.find(f);
     return findSec(p, playBar);
   };
+  if (/(add|include|insert|create|new).*(hypnotic|fm|bleep|sequence|arp)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'hypnotic_fm') };
+  if (/(add|include|insert|create|new).*(rumble|sub-?rumble|warehouse sub)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'sub_rumble') };
+  if (/(add|include|insert|create|new).*(dub|chord|delay tank)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'dub_chord') };
+  if (/(add|include|insert|create|new).*(303|acid line|acid layer|screamer)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'acid_303') };
+  if (/(add|include|insert|create|new).*(tribal|conga|tom)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'tribal_poly') };
+  if (/(add|include|insert|create|new).*(clang|anvil|metal|industrial layer)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'industrial_clang') };
+  if (/(add|include|insert|create|new).*(ride|top loop|shaker)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'top_ride') };
   if (/sidechain|duck|pump/.test(t)) return { proposal: actSidechain(p) };
   if (/polymetric|polyrhythm|percussion layer|perc layer/.test(t)) return { proposal: actPoly(p) };
+  if (/(add|include|insert|create).*(layer|element)/.test(t)) return { proposal: actAddUndergroundLayer(p, 'hypnotic_fm') };
   if (/reduction|tension|strip|drop out the kick|kick out/.test(t) && (barAt !== null || /create|add|insert/.test(t))) {
     const bar = barAt !== null ? Math.max(0, barAt - 1) : Math.round(playBar);
     return { proposal: actReduction(p, bar, lenBars && lenBars !== barAt ? lenBars : 16) };
@@ -251,8 +401,8 @@ export function interpret(text: string, p: Project, sel: Selection, playBar: num
   if (/harder|more energy|intens|bigger/.test(t)) { const s = secByName(); if (s) return { proposal: actRegenSection(p, s.id, 'harder') }; return { message: 'Select a section first.' }; }
   if (/regenerate|re-?roll|redo/.test(t)) { const s = secByName(); if (s) return { proposal: actRegenSection(p, s.id) }; }
   if (/acid|counter|variation|mutate|melody/.test(t)) return { proposal: actVariation(p, selSec?.id) };
-  if (/automation|sweep|filter|cutoff/.test(t)) return { proposal: actSweep(p, sel.kind === 'track' ? sel.id : sel.kind === 'clip' ? sel.track : undefined) };
+  if (/automation|sweep|filter|cutoff|bezier/.test(t)) return { proposal: actSweep(p, sel.kind === 'track' ? sel.id : sel.kind === 'clip' ? sel.track : undefined) };
   if (/mud|mix|clean|headroom|gain/.test(t)) return { proposal: actMix(p) };
   if (/full|evolv|6-?minute|entire|new arrangement|generate/.test(t)) return { proposal: actFull(p) };
-  return { message: 'I can: generate a full arrangement · regenerate/darken a section · insert a transition at a bar · create a tension reduction at bar N · polymetric percussion · sidechain ducking · acid variation · filter sweeps · fix mix. Try a quick action below.' };
+  return { message: 'I can: generate a full arrangement · add underground layers (FM sequence, sub-rumble, dub chords, 303 acid, tribal conga, industrial clang, ride driver) · regenerate/darken a section · insert a transition · create a tension reduction · sidechain ducking · Bezier filter sweeps · fix mix.' };
 }

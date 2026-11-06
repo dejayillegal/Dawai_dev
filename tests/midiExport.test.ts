@@ -69,4 +69,16 @@ describe('MIDI Export Engine', () => {
     const numTracks = (bytes[10] << 8) | bytes[11];
     expect(numTracks).toBe(2);
   });
+
+  it('exports SMF Type 1 MIDI via the q3 generator alias', async () => {
+    const { q3 } = await import('../src/engine/midiExport');
+    const p = newProject(defaultParams('hypnotic', 404));
+    const blob = q3(p);
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('audio/midi');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('MThd');
+    expect((bytes[8] << 8) | bytes[9]).toBe(1);
+  });
 });
+

@@ -20,6 +20,15 @@ export interface AppState {
 
 const MAX_HISTORY = 120;
 
+const cloneProjectAuto = (p: Project): Project => ({
+  ...p,
+  tracks: p.tracks.map((t) => ({ ...t })),
+  auto: p.auto.map((a) => ({
+    ...a,
+    pts: a.pts.map((pt) => (pt.curve !== undefined ? { bar: pt.bar, v: pt.v, curve: pt.curve } : { bar: pt.bar, v: pt.v })),
+  })),
+});
+
 export class Store {
   private s: AppState; private subs = new Set<() => void>(); private seq = 1; private saveTimer?: ReturnType<typeof setTimeout>;
   private repository: ProjectRepository;
@@ -131,34 +140,47 @@ export class Store {
 
   dispatch(cmd: Command, label: string, source: Source = 'user', key?: string) {
     if(!this.writable())return false;
-    const before = this.s.project; let after:Project;
-    try{after=applyCommand(before,cmd);}catch(e){this.reportError(e);return false;}
+    const before = cloneProjectAuto(this.s.project);
+    let after: Project;
+    try{after=cloneProjectAuto(applyCommand(before,cmd));}catch(e){this.reportError(e);return false;}
     if (after === before) return;
     const now = Date.now(); let entries = this.s.entries.slice(0, this.s.cursor);
     const last = entries[entries.length - 1];
-    if (key && last && last.key === key && now - last.time < 1500 && last.source === source) {
+    const isDiscreteAutoCmd = cmd.type === 'SET_AUTO' || cmd.type === 'SET_AUTO_PTS' || cmd.type === 'DEL_AUTO';
+    if (!isDiscreteAutoCmd && key && last && last.key === key && now - last.time < 1500 && last.source === source) {
       entries[entries.length - 1] = { ...last, after, time: now };
     } else {
       entries.push({ id: this.seq++, label, source, before, after, time: now, key });
       if (entries.length > MAX_HISTORY) entries = entries.slice(entries.length - MAX_HISTORY);
     }
     this.set({ project: after, entries, cursor: entries.length });
+    this.engine.syncImmediate(this.s.project);
     this.persistEdit({kind:'command',label,source,command:structuredClone(cmd)},before);
     return true;
   }
 
   undo() {
-    if(!this.writable()||this.s.cursor<=0)return;const before=this.s.project,e=this.s.entries[this.s.cursor-1];
-    this.set({project:e.before,cursor:this.s.cursor-1});this.persistEdit({kind:'undo',label:`Undo ${e.label}`,source:'user'},before);
+    if(!this.writable()||this.s.cursor<=0)return;
+    const before=this.s.project,e=this.s.entries[this.s.cursor-1];
+    const reverted = cloneProjectAuto(e.before);
+    this.set({project:reverted,cursor:this.s.cursor-1});
+    this.engine.syncImmediate(this.s.project);
+    this.persistEdit({kind:'undo',label:`Undo ${e.label}`,source:'user'},before);
   }
   redo() {
-    if(!this.writable()||this.s.cursor>=this.s.entries.length)return;const before=this.s.project,e=this.s.entries[this.s.cursor];
-    this.set({project:e.after,cursor:this.s.cursor+1});this.persistEdit({kind:'redo',label:`Redo ${e.label}`,source:'user'},before);
+    if(!this.writable()||this.s.cursor>=this.s.entries.length)return;
+    const before=this.s.project,e=this.s.entries[this.s.cursor];
+    const restored = cloneProjectAuto(e.after);
+    this.set({project:restored,cursor:this.s.cursor+1});
+    this.engine.syncImmediate(this.s.project);
+    this.persistEdit({kind:'redo',label:`Redo ${e.label}`,source:'user'},before);
   }
   jump(i:number){
     if(!this.writable()||!Number.isInteger(i)||i<0||i>this.s.entries.length||i===this.s.cursor)return;
-    const before=this.s.project,project=i===0?this.s.entries[0].before:this.s.entries[i-1].after;
-    this.set({project,cursor:i});this.persistEdit({kind:'checkpoint',label:'History jump',source:'user'},before);
+    const before=this.s.project,project=cloneProjectAuto(i===0?this.s.entries[0].before:this.s.entries[i-1].after);
+    this.set({project,cursor:i});
+    this.engine.syncImmediate(this.s.project);
+    this.persistEdit({kind:'checkpoint',label:'History jump',source:'user'},before);
   }
   replaceProject(project:Project){
     if(!this.writable())return;assertProject(project);const before=this.s.project;this.stop();
@@ -188,6 +210,7 @@ export class Store {
 }
 
 export const store = new Store();
+export { store as Y };
 if (typeof globalThis !== 'undefined') {
   (globalThis as unknown as Record<string, unknown>).__AIDAW_STORE__ = store;
 }

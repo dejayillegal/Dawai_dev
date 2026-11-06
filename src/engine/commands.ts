@@ -1,5 +1,6 @@
-import type { AutoLane, Clip, Note, Project, ScCfg, ScGroup, Section, Track } from './types';
+import type { AutoLane, AutoPoint, Clip, Note, Project, ScCfg, ScGroup, Section, Track } from './types';
 import { assertProject, assertLocks } from './validation';
+import { clamp } from './theory';
 
 export type Source = 'user' | 'ai' | 'composer';
 
@@ -20,9 +21,18 @@ export type Command =
   | { type: 'SET_SC'; group: ScGroup; patch: Partial<ScCfg> }
   | { type: 'SET_SC_ON'; on: boolean }
   | { type: 'SET_AUTO'; lane: AutoLane }
+  | { type: 'SET_AUTO_PTS'; id: string; pts: AutoPoint[] }
   | { type: 'DEL_AUTO'; id: string }
   | { type: 'SET_LOOP'; loop: Project['loop'] }
   | { type: 'PATCH'; patch: Partial<Pick<Project, 'tracks' | 'auto' | 'sections' | 'sc' | 'scOn' | 'secSeed' | 'overrides' | 'formId' | 'params'>> };
+
+const clonePts = (pts: AutoPoint[]): AutoPoint[] =>
+  pts.map((pt) => (pt.curve !== undefined ? { bar: pt.bar, v: pt.v, curve: pt.curve } : { bar: pt.bar, v: pt.v }));
+
+const cloneLane = (lane: AutoLane): AutoLane => ({
+  ...lane,
+  pts: clonePts(lane.pts),
+});
 
 const mapClips = (p: Project, f: (c: Clip, t: Track) => Clip | Clip[] | null): Project => ({
   ...p,
@@ -45,7 +55,29 @@ function reduceCommand(p: Project, c: Command): Project {
     case 'BATCH': return c.cmds.reduce(reduceChecked, p);
     case 'SET_PARAMS': return { ...p, params: { ...p.params, ...c.patch } };
     case 'SET_NAME': return { ...p, name: c.name };
-    case 'SET_TRACK': return { ...p, tracks: p.tracks.map((t) => (t.id === c.id ? { ...t, ...c.patch } : t)) };
+    case 'SET_TRACK': {
+      const prevTrack = p.tracks.find((t) => t.id === c.id);
+      const tracks = p.tracks.map((t) => (t.id === c.id ? { ...t, ...c.patch } : t));
+      let auto = p.auto;
+      const hasLockedSec = p.sections.some((s) => s.lock);
+      if (prevTrack && !prevTrack.lock && !hasLockedSec && (c.patch.cutoff !== undefined || c.patch.res !== undefined)) {
+        const cutDelta = c.patch.cutoff !== undefined ? c.patch.cutoff - prevTrack.cutoff : 0;
+        const resDelta = c.patch.res !== undefined ? c.patch.res - prevTrack.res : 0;
+        if (Math.abs(cutDelta) > 1e-6 || Math.abs(resDelta) > 1e-6) {
+          auto = p.auto.map((lane) => {
+            if (lane.track !== c.id) return lane;
+            if (lane.param === 'cutoff' && Math.abs(cutDelta) > 1e-6) {
+              return { ...lane, pts: lane.pts.map((pt) => ({ ...pt, v: +clamp(pt.v + cutDelta, 0, 1).toFixed(3) })) };
+            }
+            if (lane.param === 'res' && Math.abs(resDelta) > 1e-6) {
+              return { ...lane, pts: lane.pts.map((pt) => ({ ...pt, v: +clamp(pt.v + resDelta, 0, 1).toFixed(3) })) };
+            }
+            return lane;
+          });
+        }
+      }
+      return { ...p, tracks, auto };
+    }
     case 'ADD_TRACK': return { ...p, tracks: [...p.tracks, c.track] };
     case 'SET_SECTION': return { ...p, sections: p.sections.map((s) => (s.id === c.id ? { ...s, ...c.patch } : s)) };
     case 'SET_OVERRIDE': {
@@ -68,12 +100,23 @@ function reduceCommand(p: Project, c: Command): Project {
     case 'SET_SC': return { ...p, sc: { ...p.sc, [c.group]: { ...p.sc[c.group], ...c.patch } } };
     case 'SET_SC_ON': return { ...p, scOn: c.on };
     case 'SET_AUTO': {
-      const exists = p.auto.some((a) => a.id === c.lane.id);
-      return { ...p, auto: exists ? p.auto.map((a) => (a.id === c.lane.id ? c.lane : a)) : [...p.auto, c.lane] };
+      const nextLane = cloneLane(c.lane);
+      const exists = p.auto.some((a) => a.id === nextLane.id);
+      return {
+        ...p,
+        auto: exists ? p.auto.map((a) => (a.id === nextLane.id ? nextLane : cloneLane(a))) : [...p.auto.map(cloneLane), nextLane],
+      };
     }
-    case 'DEL_AUTO': return { ...p, auto: p.auto.filter((a) => a.id !== c.id) };
+    case 'SET_AUTO_PTS': {
+      const nextPts = clonePts(c.pts);
+      return {
+        ...p,
+        auto: p.auto.map((a) => (a.id === c.id ? { ...a, pts: nextPts } : cloneLane(a))),
+      };
+    }
+    case 'DEL_AUTO': return { ...p, auto: p.auto.filter((a) => a.id !== c.id).map(cloneLane) };
     case 'SET_LOOP': return { ...p, loop: c.loop };
-    case 'PATCH': return { ...p, ...c.patch };
+    case 'PATCH': return { ...p, ...c.patch, ...(c.patch.auto ? { auto: c.patch.auto.map(cloneLane) } : {}) };
   }
 }
 
@@ -89,9 +132,9 @@ function reduceChecked(p: Project, c: Command): Project {
   if(c.type==='SPLIT_CLIP'&&!Number.isFinite(c.at))throw new Error('Invalid split time');
   if(c.type==='BATCH'&&(!Array.isArray(c.cmds)||c.cmds.length>10000))throw new Error('Invalid command batch');
   const tracks = p.tracks; const clips = tracks.flatMap(t=>t.clips);
-  if (['SET_TRACK','SET_SECTION','SET_CLIP','DEL_CLIP','SPLIT_CLIP','DUP_CLIP','DEL_AUTO'].includes(c.type)) {
+  if (['SET_TRACK','SET_SECTION','SET_CLIP','DEL_CLIP','SPLIT_CLIP','DUP_CLIP','DEL_AUTO','SET_AUTO_PTS'].includes(c.type)) {
     const id = (c as {id:string}).id;
-    const pool = c.type==='SET_TRACK'?tracks:c.type==='SET_SECTION'?p.sections:c.type==='DEL_AUTO'?p.auto:clips;
+    const pool = c.type==='SET_TRACK'?tracks:c.type==='SET_SECTION'?p.sections:(c.type==='DEL_AUTO'||c.type==='SET_AUTO_PTS')?p.auto:clips;
     if(!pool.some(x=>x.id===id))throw new Error(`Missing target: ${id}`);
   }
   if(c.type==='ADD_CLIP'&&!tracks.some(t=>t.id===c.track))throw new Error('Missing clip track');

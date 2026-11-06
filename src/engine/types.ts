@@ -71,7 +71,7 @@ export interface Section {
 }
 
 export type AutoParam = 'cutoff' | 'res' | 'rev' | 'vol' | 'hp';
-export interface AutoPoint { bar: number; v: number }
+export interface AutoPoint { bar: number; v: number; curve?: number }
 export interface AutoLane { id: string; track: string; param: AutoParam; pts: AutoPoint[] }
 
 export interface ScCfg { thr: number; ratio: number; atk: number; rel: number; hpf: number; mix: number; knee: number }

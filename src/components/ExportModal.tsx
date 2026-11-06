@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { store } from '../store';
 import { renderWav, isolateStemProject, type ExportResult, type ExportState } from '../engine/audio';
-import { exportProjectToMidi } from '../engine/midiExport';
+import { downloadProjectMidi, q3 } from '../engine/midiExport';
 import { exportProjectToAls } from '../engine/alsExport';
 import { Btn } from '../ui';
 import { cn } from '../utils/cn';
@@ -29,6 +29,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [midiUrl, setMidiUrl] = useState<string>('');
   const [midiName, setMidiName] = useState<string>('');
+  const [midiBytes, setMidiBytes] = useState<number>(0);
   const [alsUrl, setAlsUrl] = useState<string>('');
   const [alsName, setAlsName] = useState<string>('');
   const [alsLoading, setAlsLoading] = useState(false);
@@ -115,19 +116,27 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const handleExportMidi = () => {
+  const handleExportMidi = (directDownload = true, forceFullProject = false) => {
     if (midiUrl) URL.revokeObjectURL(midiUrl);
     const p = store.get().project;
-    const isSingle = targetTrack !== 'all';
-    const trackObj = isSingle ? p.tracks.find((t) => t.id === targetTrack) : null;
-    const blob = exportProjectToMidi(p, isSingle ? targetTrack : undefined);
-    const downloadUrl = URL.createObjectURL(blob);
-    const filename = isSingle && trackObj
-      ? `${p.name.replace(/[^\w.-]+/g, '_')}_${trackObj.name.replace(/[^\w.-]+/g, '_')}.mid`
-      : `${p.name.replace(/[^\w.-]+/g, '_')}_full.mid`;
-
-    setMidiUrl(downloadUrl);
-    setMidiName(filename);
+    const scope = forceFullProject ? 'all' : targetTrack;
+    if (directDownload) {
+      const out = downloadProjectMidi(p, scope);
+      setMidiUrl(out.url);
+      setMidiName(out.filename);
+      setMidiBytes(out.blob.size);
+    } else {
+      const isSingle = scope !== 'all';
+      const trackObj = isSingle ? p.tracks.find((t) => t.id === scope) : null;
+      const blob = q3(p, isSingle ? scope : undefined);
+      const downloadUrl = URL.createObjectURL(blob);
+      const filename = isSingle && trackObj
+        ? `${p.name.replace(/[^\w.-]+/g, '_')}_${trackObj.name.replace(/[^\w.-]+/g, '_')}.mid`
+        : `${p.name.replace(/[^\w.-]+/g, '_')}_smf1.mid`;
+      setMidiUrl(downloadUrl);
+      setMidiName(filename);
+      setMidiBytes(blob.size);
+    }
   };
 
   const handleExportAls = async () => {
@@ -150,9 +159,35 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3" onClick={() => !busy && onClose()}>
       <div className="w-full max-w-md rounded-xl border border-line bg-panel p-4 shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Export WAV, MIDI and Ableton Live">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[14px] font-bold">Export · WAV, MIDI & Ableton Live</h2>
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 className="text-[14px] font-bold">Export · WAV, MIDI &amp; Ableton Live</h2>
           <Btn small tone="ghost" onClick={() => !busy && onClose()}>✕</Btn>
+        </div>
+
+        {/* Direct SMF Type 1 MIDI Menu Item Bar */}
+        <div
+          role="menubar"
+          aria-label="Export quick actions"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan/35 bg-[#0c1218] px-2.5 py-1.5"
+        >
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold text-cyan">Standard MIDI File (SMF Type 1)</div>
+            <div className="text-[9px] text-slate-400">Multi-track 480 PPQ + Conductor track ({currentProject.params.bpm} BPM)</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                setTab('midi');
+                handleExportMidi(true, true);
+              }}
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded border border-cyan bg-cyan/90 px-2.5 text-[10px] font-semibold text-black hover:bg-cyan disabled:opacity-40"
+            >
+              ⬇ Export MIDI (SMF Type 1)
+            </button>
+          </div>
         </div>
 
         {/* Tab switch */}
@@ -294,7 +329,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               </label>
             </div>
 
-            <div className="mb-4 rounded border border-line bg-elev/60 p-3 text-[11px] text-slate-300">
+            <div className="mb-3 rounded border border-line bg-elev/60 p-3 text-[11px] text-slate-300">
               <div className="font-semibold text-cyan">MIDI Export Specifications:</div>
               <ul className="mt-1 list-inside list-disc space-y-0.5 text-[10px] text-slate-400">
                 <li>SMF Type 1 multi-track format with Conductor track (BPM: {currentProject.params.bpm}, 4/4 meter)</li>
@@ -303,9 +338,15 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               </ul>
             </div>
 
+            {midiUrl && (
+              <div className="mb-3 rounded border border-emerald-500/40 bg-emerald-500/10 p-2 font-mono text-[10px] text-emerald-200">
+                ✓ SMF Type 1 MIDI generated ({midiBytes.toLocaleString()} bytes) · {midiName}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
-              <Btn tone="amber" onClick={handleExportMidi}>
-                Generate MIDI File
+              <Btn tone="amber" onClick={() => handleExportMidi(true)}>
+                Generate &amp; Download MIDI (.mid)
               </Btn>
               {midiUrl && (
                 <a href={midiUrl} download={midiName} className="inline-flex h-8 items-center rounded-md border border-cyan bg-cyan/90 px-3 text-[11px] font-semibold text-black">

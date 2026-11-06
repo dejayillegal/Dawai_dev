@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import { store, useApp, engine } from '../store';
-import { QUICK_ACTIONS, fixFor } from '../engine/assist';
+import { QUICK_ACTIONS, UNDERGROUND_ELEMENT_PRESETS, actAddUndergroundLayer, fixFor } from '../engine/assist';
 import { diagnose } from '../engine/diagnostics';
 import { acceptProposal, rejectProposal, runAssist } from '../actions';
 import { Btn, Badge } from '../ui';
@@ -40,6 +40,36 @@ export function Assist() {
           </div>
         </div>
 
+        {/* Underground Producer AI Layer & Element Generator */}
+        <div className="rounded-md border border-line bg-panel p-2">
+          <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <span>AI Underground Layer Producer</span>
+            <Badge color="#06b6d4">+ Add Element</Badge>
+          </div>
+          <p className="mb-2 text-[10px] leading-snug text-slate-400">
+            Synthesize a context-aware underground layer locked to {app.project.params.bpm} BPM &amp; scale with sidechain routing and Bezier filter sweeps:
+          </p>
+          <div className="grid grid-cols-1 gap-1">
+            {UNDERGROUND_ELEMENT_PRESETS.map((el) => (
+              <button
+                key={el.id}
+                type="button"
+                onClick={() => store.propose(() => actAddUndergroundLayer(app.project, el.id))}
+                className="flex items-center justify-between gap-2 rounded border border-line bg-elev px-2 py-1.5 text-left transition-colors hover:border-cyan hover:bg-[#19222c]"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-100">
+                    <span className="text-cyan">+</span>
+                    <span className="truncate">{el.label}</span>
+                  </div>
+                  <div className="truncate text-[9px] text-slate-400">{el.desc}</div>
+                </div>
+                <span className="shrink-0 rounded bg-cyan/15 px-1.5 py-0.5 font-mono text-[9px] text-cyan">{el.badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {app.proposals.map((pr) => {
           const active = app.previewId === pr.id;
           return (
@@ -66,7 +96,7 @@ export function Assist() {
           {QUICK_ACTIONS.map((q) => <button key={q} onClick={() => runAssist(q)} className="rounded-full border border-line bg-elev px-2 py-0.5 text-[10px] text-slate-300 hover:border-cyan hover:text-cyan">{q}</button>)}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex gap-1.5">
-          <input aria-label="Assist command" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Create a 16-bar tension reduction at bar 97…" className="h-8 min-w-0 flex-1 rounded-md border border-line bg-elev px-2 text-[12px] placeholder:text-slate-600" style={{ userSelect: 'text' }} />
+          <input aria-label="Assist command" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Add a hypnotic FM sequence layer…" className="h-8 min-w-0 flex-1 rounded-md border border-line bg-elev px-2 text-[12px] placeholder:text-slate-600" style={{ userSelect: 'text' }} />
           <Btn tone="cyan" onClick={send}>Run</Btn>
         </form>
       </div>

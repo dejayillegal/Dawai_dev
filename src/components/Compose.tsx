@@ -40,7 +40,7 @@ export function Compose() {
           <label className="col-span-2 text-[10px] uppercase text-slate-400">Scale / mode<select value={P.scale} onChange={(e) => set({ scale: e.target.value as ScaleId }, 'scale')} className="mt-0.5 w-full text-[11px]">{Object.entries(SCALE_NAMES).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
         </div>
         <div className="mt-2 space-y-1.5">
-          <Slider label="Tempo" value={P.bpm} min={110} max={150} step={1} onChange={(v) => set({ bpm: v }, 'bpm')} fmt={(v) => `${v} BPM`} />
+          <Slider label="Tempo" value={P.bpm} min={110} max={155} step={1} onChange={(v) => set({ bpm: v }, 'bpm')} fmt={(v) => `${v} BPM`} />
           <Slider label="Target length" value={P.bars} min={96} max={256} step={8} onChange={(v) => set({ bars: v }, 'bars')} fmt={(v) => `${v} bars · ${(v * 4 * 60 / P.bpm / 60).toFixed(1)} min`} />
           <Slider label="Arrangement density" value={P.density} min={0} max={1} onChange={(v) => set({ density: v }, 'density')} />
           <Slider label="Rhythmic complexity" value={P.complexity} min={0} max={1} onChange={(v) => set({ complexity: v }, 'cx')} />

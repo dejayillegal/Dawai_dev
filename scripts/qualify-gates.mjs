@@ -181,7 +181,7 @@ async function runBrowserQualification() {
       store.dispatch({ type: 'SPLIT_CLIP', id: targetClip.id, at: targetClip.start + 2, rightId: uid('clip') }, 'Split clip');
       const clipsAfter = store.get().project.tracks.find(t => t.id === firstTrack.id).clips.length;
 
-      // Exercise interactive Timeline Zoom (+, -, Fit, Row Height L)
+      // Exercise interactive Timeline Zoom (+, -, Fit, Row Height L, and Ctrl+Wheel Zoom)
       const zoomInBtn = document.querySelector('button[aria-label="Zoom in"]');
       const zoomOutBtn = document.querySelector('button[aria-label="Zoom out"]');
       const zoomFitBtn = document.querySelector('button[aria-label="Zoom to fit arrangement"]');
@@ -191,30 +191,50 @@ async function runBrowserQualification() {
       zoomFitBtn?.click();
       rowHeightLBtn?.click();
 
-      // Exercise Device Rack tab & RotaryKnobs
+      // Dispatch Ctrl+Wheel on timeline scroll container to verify smooth wheel zoom
+      const zoomSlider = document.querySelector('input[aria-label="Timeline zoom"]');
+      const zoomBefore = zoomSlider ? Number(zoomSlider.value) : 0;
+      const timelineScroller = document.querySelector('.relative.min-h-0.flex-1.overflow-auto');
+      timelineScroller?.dispatchEvent(new WheelEvent('wheel', { deltaY: -80, ctrlKey: true, clientX: 500, bubbles: true, cancelable: true }));
+      await new Promise(r => setTimeout(r, 80));
+      const zoomAfter = zoomSlider ? Number(zoomSlider.value) : 0;
+
+      // Exercise Device Rack tab: RotaryKnobs + Linear Sliders
       store.select({ kind: 'track', id: firstTrack.id });
       await new Promise(r => setTimeout(r, 80));
       const deviceRackBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Device Rack');
       deviceRackBtn?.click();
       await new Promise(r => setTimeout(r, 100));
       const rotaryKnobCount = document.querySelectorAll('.cursor-ns-resize svg').length;
+      const linearSliderCount = document.querySelectorAll('input[type="range"]').length;
       const synthSelector = document.querySelector('select[aria-label="Synthesizer archetype"]');
 
-      // Exercise Automation tab & shape preset
-      const autoTabBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Automation');
-      autoTabBtn?.click();
+      // Exercise Automation tab & Bezier shape preset
+      const autoTabBtns = Array.from(document.querySelectorAll('button')).filter(b => b.textContent?.trim() === 'Automation');
+      autoTabBtns[autoTabBtns.length - 1]?.click();
       await new Promise(r => setTimeout(r, 100));
-      const arcPresetBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Arc'));
-      arcPresetBtn?.click();
+      const sCurvePresetBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('S-Curve'));
+      sCurvePresetBtn?.click();
       await new Promise(r => setTimeout(r, 80));
+      const hasBezierCurves = store.get().project.auto.some(l => l.pts.some(pt => typeof pt.curve === 'number' && Math.abs(pt.curve) > 0.05));
+
+      // Exercise AI Underground Layer Producer
+      const { actAddUndergroundLayer } = await import('/src/engine/assist.ts');
+      const tracksBeforeAi = store.get().project.tracks.length;
+      const aiLayerRes = actAddUndergroundLayer(store.get().project, 'hypnotic_fm');
+      store.dispatch(aiLayerRes.cmd, aiLayerRes.summary);
+      const tracksAfterAi = store.get().project.tracks.length;
 
       return {
         lockedSectionProtected: JSON.stringify(pLocked.sections[2]) === JSON.stringify(pAfterRegen.sections[2]),
         perSpanAutoCount: store.get().project.auto.length,
         splitClipWorked: clipsAfter === clipsBefore + 1,
-        zoomControlsWorked: !!zoomInBtn && !!zoomOutBtn && !!zoomFitBtn && !!rowHeightLBtn,
+        zoomControlsWorked: !!zoomInBtn && !!zoomOutBtn && !!zoomFitBtn && !!rowHeightLBtn && zoomAfter > zoomBefore,
         rotaryKnobCount,
-        hasSynthSelector: !!synthSelector
+        linearSliderCount,
+        hasSynthSelector: !!synthSelector,
+        hasBezierCurves,
+        undergroundLayerAdded: tracksAfterAi === tracksBeforeAi + 1
       };
     })()`);
 

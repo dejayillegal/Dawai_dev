@@ -22,18 +22,48 @@ export interface Strip {
 }
 
 function makeIR(ctx: BaseAudioContext, seconds = 2.8, seed = 2): AudioBuffer {
-  const rng=new Rng(seed);
+  const rng = new Rng(seed);
   const sr = ctx.sampleRate; const len = Math.floor(sr * seconds); const b = ctx.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
-    const d = b.getChannelData(c); let lp = 0;
+    const d = b.getChannelData(c); let lp1 = 0; let lp2 = 0;
     for (let i = 0; i < len; i++) {
-      const t = i / len; const a = Math.exp(-4.2 * t); lp += (rng.next() * 2 - 1 - lp) * (0.55 - 0.4 * t);
-      d[i] = lp * a * (i < sr * 0.02 ? i / (sr * 0.02) : 1);
+      const t = i / len; const a = Math.exp(-3.8 * t);
+      const w = rng.next() * 2 - 1;
+      // Progressive two-stage low-pass damping for a dark concrete vault acoustic space
+      const coef = 0.28 - 0.21 * t;
+      lp1 += (w - lp1) * coef;
+      lp2 += (lp1 - lp2) * (coef * 0.85);
+      d[i] = lp2 * a * (i < sr * 0.025 ? i / (sr * 0.025) : 1);
     }
   }
   return b;
 }
-const satCurve = (k: number) => { const c = new Float32Array(new ArrayBuffer(2048 * 4)); for (let i = 0; i < 2048; i++) { const x = (i / 2047) * 2 - 1; c[i] = Math.tanh(x * k) / Math.tanh(k); } return c; };
+const satCurve = (k: number) => {
+  const c = new Float32Array(new ArrayBuffer(2048 * 4));
+  const norm = Math.tanh(k);
+  for (let i = 0; i < 2048; i++) {
+    const x = (i / 2047) * 2 - 1;
+    const biased = x + 0.055 * x * x - 0.055;
+    c[i] = Math.tanh(biased * k) / norm;
+  }
+  return c;
+};
+
+const sharedBufferCache = new WeakMap<BaseAudioContext, Map<number, { noise: AudioBuffer; ir: AudioBuffer }>>();
+
+export function getSharedBuffers(ctx: BaseAudioContext, seed: number): { noise: AudioBuffer; ir: AudioBuffer } {
+  let bySeed = sharedBufferCache.get(ctx);
+  if (!bySeed) {
+    bySeed = new Map();
+    sharedBufferCache.set(ctx, bySeed);
+  }
+  let pair = bySeed.get(seed);
+  if (!pair) {
+    pair = { noise: makeNoise(ctx, seed), ir: makeIR(ctx, 2.8, seed + 1) };
+    bySeed.set(seed, pair);
+  }
+  return pair;
+}
 
 export class Graph {
   seed: number;
@@ -48,10 +78,45 @@ export class Graph {
   failure?: string;
   env: VEnv; voices = 0; mode = '';
 
-  constructor(ctx: BaseAudioContext, useWorklet: boolean, shared?: { noise: AudioBuffer; ir: AudioBuffer }, record = true, seed = 1) {
+  /**
+   * Pre-allocates and primes the sidechain AudioWorkletNodes through a silent zero-gain sink
+   * so the audio rendering thread instantiates and warms up the worklet processors before playback starts.
+   */
+  static prewarmWorkletNodes(ctx: BaseAudioContext, record = true): Partial<Record<ScGroup, AudioWorkletNode>> {
+    const nodes: Partial<Record<ScGroup, AudioWorkletNode>> = {};
+    if (typeof AudioWorkletNode === 'undefined') return nodes;
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    silent.connect(ctx.destination);
+    for (const g of GROUPS) {
+      try {
+        const node = new AudioWorkletNode(ctx, 'sc-comp', {
+          numberOfInputs: 2,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          processorOptions: { metering: record },
+        });
+        node.connect(silent);
+        nodes[g] = node;
+      } catch {
+        // Fallback path will be used if AudioWorkletNode instantiation fails
+      }
+    }
+    return nodes;
+  }
+
+  constructor(
+    ctx: BaseAudioContext,
+    useWorklet: boolean,
+    shared?: { noise: AudioBuffer; ir: AudioBuffer },
+    record = true,
+    seed = 1,
+    prewarmedNodes?: Partial<Record<ScGroup, AudioWorkletNode>>
+  ) {
     this.seed=seed;
     this.ctx = ctx; this.useWorklet = useWorklet;
-    const noise = shared?.noise ?? makeNoise(ctx,seed); const ir = shared?.ir ?? makeIR(ctx,2.8,seed+1);
+    const cached = shared ?? getSharedBuffers(ctx, seed);
+    const noise = cached.noise; const ir = cached.ir;
     const voiceRandom=new Rng(seed+2);
     this.env = { ctx, noise, random: ()=>voiceRandom.next(), sources:new Set(), dirt: 0.3, stepDur: 0.11, onStart: () => { this.voices++; }, onEnd: () => { this.voices = Math.max(0, this.voices - 1); } };
     this.preMaster = ctx.createGain();
@@ -64,7 +129,18 @@ export class Graph {
 
     for (const g of GROUPS) {
       if (useWorklet) {
-        const node = new AudioWorkletNode(ctx, 'sc-comp', { numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2], processorOptions:{metering:record} });
+        const pre = prewarmedNodes?.[g];
+        if (pre) {
+          try { pre.disconnect(); } catch { /* detach from silent prewarm sink */ }
+        }
+        const node =
+          pre ??
+          new AudioWorkletNode(ctx, 'sc-comp', {
+            numberOfInputs: 2,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            processorOptions: { metering: record },
+          });
         node.onprocessorerror=()=>{this.failure='Sidechain processor failed; restart playback after checking audio support.';};
         node.connect(this.preMaster);
         if (record) node.port.onmessage = (e) => { const h = this.hist[g]; h.push(e.data); if (h.length > 400) h.shift(); };
@@ -73,17 +149,21 @@ export class Graph {
         const duck = ctx.createGain(); duck.connect(this.preMaster); this.groups[g] = { input: duck, duck };
       }
     }
-    // reverb + tempo-synced delay returns
-    const conv = ctx.createConvolver(); conv.buffer = ir; const revOut = ctx.createGain(); revOut.gain.value = 0.55;
-    this.revIn = ctx.createGain(); const pre = ctx.createDelay(0.2); pre.delayTime.value = 0.018;
-    const revLp = ctx.createBiquadFilter(); revLp.type = 'lowpass'; revLp.frequency.value = 7000; const revHp = ctx.createBiquadFilter(); revHp.type = 'highpass'; revHp.frequency.value = 220;
+    // Dark concrete vault reverb + warm analog tape-saturated delay returns
+    const conv = ctx.createConvolver(); conv.buffer = ir; const revOut = ctx.createGain(); revOut.gain.value = 0.56;
+    this.revIn = ctx.createGain(); const pre = ctx.createDelay(0.2); pre.delayTime.value = 0.024;
+    const revLp = ctx.createBiquadFilter(); revLp.type = 'lowpass'; revLp.frequency.value = 2350; revLp.Q.value = 0.65;
+    const revHp = ctx.createBiquadFilter(); revHp.type = 'highpass'; revHp.frequency.value = 155; revHp.Q.value = 0.65;
     this.revIn.connect(pre); pre.connect(revHp); revHp.connect(conv); conv.connect(revLp); revLp.connect(revOut); revOut.connect(this.groups.fx.input);
     this.delIn = ctx.createGain(); this.delay = ctx.createDelay(2); this.delay.delayTime.value = 0.34;
-    const fb = ctx.createGain(); fb.gain.value = 0.46; const fbLp = ctx.createBiquadFilter(); fbLp.type = 'lowpass'; fbLp.frequency.value = 3200;
-    const delOut = ctx.createGain(); delOut.gain.value = 0.6;
-    this.delIn.connect(this.delay); this.delay.connect(fbLp); fbLp.connect(fb); fb.connect(this.delay); fbLp.connect(delOut); delOut.connect(this.preMaster);
-    const dToRev = ctx.createGain(); dToRev.gain.value = 0.25; delOut.connect(dToRev); dToRev.connect(this.revIn);
-    this.owned.push(this.preMaster,this.hp,this.sat,this.limiter,this.master,this.analyser,this.revIn,this.delIn,this.delay,conv,revOut,pre,revLp,revHp,fb,fbLp,delOut,dToRev);
+    const fb = ctx.createGain(); fb.gain.value = 0.48;
+    const fbHp = ctx.createBiquadFilter(); fbHp.type = 'highpass'; fbHp.frequency.value = 185; fbHp.Q.value = 0.65;
+    const fbLp = ctx.createBiquadFilter(); fbLp.type = 'lowpass'; fbLp.frequency.value = 2050; fbLp.Q.value = 0.7;
+    const fbSat = ctx.createWaveShaper(); fbSat.curve = satCurve(1.35); fbSat.oversample = '2x';
+    const delOut = ctx.createGain(); delOut.gain.value = 0.58;
+    this.delIn.connect(this.delay); this.delay.connect(fbHp); fbHp.connect(fbLp); fbLp.connect(fbSat); fbSat.connect(fb); fb.connect(this.delay); fbLp.connect(delOut); delOut.connect(this.preMaster);
+    const dToRev = ctx.createGain(); dToRev.gain.value = 0.28; delOut.connect(dToRev); dToRev.connect(this.revIn);
+    this.owned.push(this.preMaster,this.hp,this.sat,this.limiter,this.master,this.analyser,this.revIn,this.delIn,this.delay,conv,revOut,pre,revLp,revHp,fb,fbHp,fbLp,fbSat,delOut,dToRev);
   }
 
   private createStrip(t: Track): Strip {
@@ -170,7 +250,14 @@ export function evalLane(lane: AutoLane, bar: number): number {
   const pts = lane.pts; if (!pts.length) return 0.5;
   if (bar <= pts[0].bar) return pts[0].v;
   for (let i = 1; i < pts.length; i++) {
-    if (bar < pts[i].bar) { const a = pts[i - 1], b = pts[i]; return b.bar - a.bar < 0.02 ? a.v : lerp(a.v, b.v, (bar - a.bar) / (b.bar - a.bar)); }
+    if (bar < pts[i].bar) {
+      const a = pts[i - 1], b = pts[i];
+      if (b.bar - a.bar < 0.02) return a.v;
+      const t = Math.max(0, Math.min(1, (bar - a.bar) / (b.bar - a.bar)));
+      const c = b.curve ?? 0;
+      const k = Math.abs(c) < 1e-4 ? t : c > 0 ? Math.pow(t, 1 + c * 2.6) : 1 - Math.pow(1 - t, 1 - c * 2.6);
+      return lerp(a.v, b.v, k);
+    }
   }
   return pts[pts.length - 1].v;
 }
@@ -190,7 +277,7 @@ export class Scheduler {
     }
   }
 
-  /** sample-accurate: lane events are placed on AudioParam timelines (no main-thread stepping) */
+  /** sample-accurate: lane events are placed on AudioParam timelines (with Bezier curve sub-stepping when curved) */
   scheduleAutomation(p: Project, fromBar: number, t0: number, future: boolean) {
     const sd = stepDurOf(p.params.bpm);
     const active=new Set(p.auto.map(l=>l.id));
@@ -212,9 +299,23 @@ export class Scheduler {
         if (q.bar <= fromBar) continue;
         const time = t0 + (q.bar - fromBar) * STEPS_PER_BAR * sd; const val = map(q.v);
         const gap = prev ? q.bar - prev.bar : 1;
-        if (gap < 0.02) param.setValueAtTime(val, time);
-        else if (exp) param.exponentialRampToValueAtTime(Math.max(0.001, val), time);
-        else param.linearRampToValueAtTime(val, time);
+        if (gap < 0.02) {
+          param.setValueAtTime(val, time);
+        } else if (prev && q.curve && Math.abs(q.curve) >= 0.01) {
+          const segStart = Math.max(fromBar, prev.bar);
+          const steps = Math.min(20, Math.max(6, Math.ceil((q.bar - segStart) * 2)));
+          for (let s = 1; s <= steps; s++) {
+            const sb = segStart + ((q.bar - segStart) * s) / steps;
+            const st = t0 + (sb - fromBar) * STEPS_PER_BAR * sd;
+            const sv = map(evalLane(lane, sb));
+            if (exp) param.exponentialRampToValueAtTime(Math.max(0.001, sv), st);
+            else param.linearRampToValueAtTime(sv, st);
+          }
+        } else if (exp) {
+          param.exponentialRampToValueAtTime(Math.max(0.001, val), time);
+        } else {
+          param.linearRampToValueAtTime(val, time);
+        }
         prev = q;
       }
     }
@@ -261,18 +362,44 @@ export function playbackRange(p:Project,fromBar:number){
 }
 export class Engine {
   ctx?: AudioContext; graph: Graph | null = null; sched?: Scheduler; workletOk = false; workletTried = false;
+  prewarmed = false;
   playing = false; timer?: number; getProject: () => Project = () => { throw new Error('no project'); };
   private segs: { refStep: number; refTime: number; dur: number }[] = [];
   private nextStep = 0; private lastProject?: Project; private lastAuto?: unknown;
   private shared?: { noise: AudioBuffer; ir: AudioBuffer };
+  private prewarmedNodes?: Partial<Record<ScGroup, AudioWorkletNode>>;
   private generation=0;
   private chaseNextWindow=false;
   private initializing?: Promise<void>;
   schedMs = 0; onStop?: () => void; onError?: (error:Error)=>void;
 
+  constructor() {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      const warmOnce = () => {
+        window.removeEventListener('pointerdown', warmOnce, true);
+        window.removeEventListener('keydown', warmOnce, true);
+        window.removeEventListener('touchstart', warmOnce, true);
+        void this.prewarm().catch(() => {
+          /* Defer any context errors until explicit play() */
+        });
+      };
+      window.addEventListener('pointerdown', warmOnce, { capture: true, passive: true });
+      window.addEventListener('keydown', warmOnce, { capture: true, passive: true });
+      window.addEventListener('touchstart', warmOnce, { capture: true, passive: true });
+    }
+  }
+
   get state() { return this.ctx?.state ?? 'idle'; }
   get voices() { return this.graph?.voices ?? 0; }
   get latency() { return this.ctx ? (this.ctx.baseLatency || 0) + ((this.ctx as AudioContext & { outputLatency?: number }).outputLatency || 0) : 0; }
+
+  private safeSeed(): number {
+    try {
+      return this.getProject().params.seed;
+    } catch {
+      return 1337;
+    }
+  }
 
   private async initialize() {
     if (!this.ctx) {
@@ -288,6 +415,44 @@ export class Engine {
         try{await this.ctx.audioWorklet.addModule(url); this.workletOk = true;}finally{URL.revokeObjectURL(url);}
       } catch (e) { console.warn('AudioWorklet unavailable — using scheduled-envelope sidechain fallback', e); this.workletOk = false; }
     }
+    if (this.ctx) {
+      this.shared = getSharedBuffers(this.ctx, this.safeSeed());
+      if (this.workletOk && !this.prewarmedNodes) {
+        this.prewarmedNodes = Graph.prewarmWorkletNodes(this.ctx, true);
+      }
+      this.prewarmed = true;
+    }
+  }
+
+  /** Pre-warms AudioContext, AudioWorklet processor module, shared impulse/noise buffers, and standby AudioWorkletNodes. */
+  async prewarm(seed?: number): Promise<boolean> {
+    if (!this.initializing) {
+      this.initializing = this.initialize().finally(() => {
+        this.initializing = undefined;
+      });
+    }
+    await this.initializing;
+    if (this.ctx) {
+      this.shared = getSharedBuffers(this.ctx, seed ?? this.safeSeed());
+      if (this.workletOk && !this.prewarmedNodes) {
+        this.prewarmedNodes = Graph.prewarmWorkletNodes(this.ctx, true);
+      }
+      this.prewarmed = true;
+    }
+    return this.prewarmed;
+  }
+
+  /** Immediately syncs track parameters and reschedules automation on the live graph (used by undo/redo). */
+  syncImmediate(p: Project) {
+    if (!this.ctx || !this.graph || !this.sched) return;
+    this.graph.sync(p);
+    this.lastProject = p;
+    this.lastAuto = p.auto;
+    if (this.segs.length) {
+      const sg = this.segs[this.segs.length - 1];
+      const nowStep = sg.refStep + Math.max(0, this.ctx.currentTime + 0.015 - sg.refTime) / sg.dur;
+      this.sched.scheduleAutomation(p, nowStep / STEPS_PER_BAR, this.ctx.currentTime + 0.015, true);
+    }
   }
 
   /** call from a user gesture (also unlocks iOS/Android autoplay policies) */
@@ -295,15 +460,18 @@ export class Engine {
     if(!Number.isFinite(fromBar))throw new Error('Invalid playback position');
     const generation=++this.generation;
     this.halt();
+    const wasWarm = this.prewarmed && !!this.prewarmedNodes;
     if(!this.initializing)this.initializing=this.initialize().finally(()=>{this.initializing=undefined;});
     await this.initializing;
     if(generation!==this.generation)return;
     const ctx = this.ctx!; const p = this.getProject();assertProject(p);
-    this.shared={noise:makeNoise(ctx,p.params.seed),ir:makeIR(ctx,2.8,p.params.seed+1)};
-    this.graph=new Graph(ctx,this.workletOk,this.shared,true,p.params.seed);this.sched=new Scheduler(this.graph);
+    this.shared = getSharedBuffers(ctx, p.params.seed);
+    const warmNodes = this.prewarmedNodes;
+    this.prewarmedNodes = undefined;
+    this.graph=new Graph(ctx,this.workletOk,this.shared,true,p.params.seed,warmNodes);this.sched=new Scheduler(this.graph);
     this.graph!.sync(p); this.lastProject = p; this.lastAuto = p.auto;
     const range=playbackRange(p,fromBar);
-    const dur = stepDurOf(p.params.bpm); const t0 = ctx.currentTime + 0.1; const step = range.start * STEPS_PER_BAR;
+    const dur = stepDurOf(p.params.bpm); const t0 = ctx.currentTime + (wasWarm ? 0.025 : 0.045); const step = range.start * STEPS_PER_BAR;
     this.segs = [{ refStep: step, refTime: t0, dur }]; this.nextStep = step; this.chaseNextWindow=true; this.playing = true;
     try{
       this.sched!.scheduleAutomation(p, range.start, t0, true);
@@ -314,6 +482,9 @@ export class Engine {
   private halt() {
     if (this.timer) clearInterval(this.timer); this.timer = undefined; this.playing = false;
     if (this.graph) { this.graph.kill(); this.graph = null; this.sched = undefined; }
+    if (this.ctx && this.workletOk && !this.prewarmedNodes) {
+      this.prewarmedNodes = Graph.prewarmWorkletNodes(this.ctx, true);
+    }
   }
   stop() { ++this.generation; const was = this.playing; this.halt(); if (was) this.onStop?.(); }
 
@@ -360,6 +531,8 @@ export class Engine {
     this.schedMs = this.schedMs * 0.9 + (performance.now() - t0) * 0.1;
   }
 }
+
+export { Graph as Aw, Engine as RE };
 
 // ───────────── offline WAV export (same scheduler + graph) ─────────────
 export type ExportState = 'IDLE' | 'VALIDATING' | 'PREPARING' | 'RENDERING' | 'PROCESSING' | 'ENCODING' | 'SAVING' | 'VERIFYING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';

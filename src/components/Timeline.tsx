@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { uid } from '../engine/theory';
 import { engine, store, useApp } from '../store';
 import { totalBars, type Clip, type Project, type Track } from '../engine/types';
+import { curveFactor } from '../engine/validation';
 import { LAYERS, ROLE_COLORS } from '../engine/styles';
 import { acceptProposal, newClipAt, regenerateSectionNow, rejectProposal, seek, splitSelectedAtPlayhead } from '../actions';
 import { Btn } from '../ui';
@@ -77,7 +78,8 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
   const meterRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const meterHold = useRef<Record<string, number>>({});
   const lastClipTap = useRef<{ id: string; t: number }>({ id: '', t: 0 });
-  const pinchRef = useRef<{ dist: number; ppb0: number } | null>(null);
+  const pinchRef = useRef<{ dist: number; ppb0: number; anchorBar: number; midX: number } | null>(null);
+  const zoomRafRef = useRef<number>(0);
 
   const bars = Math.max(32, totalBars(view) + 4);
   const W = bars * ppb;
@@ -87,6 +89,18 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
   const locked = !!prev;
 
   const trackOf = useMemo(() => new Map(view.tracks.map((t, i) => [t.id, i])), [view.tracks]);
+
+  const applyZoomAnchored = useCallback((nextPpb: number, anchorBar?: number, pointerOffsetX?: number) => {
+    const clamped = Math.max(4, Math.min(72, Math.round(nextPpb)));
+    if (zoomRafRef.current) cancelAnimationFrame(zoomRafRef.current);
+    zoomRafRef.current = requestAnimationFrame(() => {
+      setPpb(clamped);
+      const sc = scRef.current;
+      if (sc && anchorBar !== undefined && pointerOffsetX !== undefined) {
+        sc.scrollLeft = Math.max(0, HEAD_W + anchorBar * clamped - pointerOffsetX);
+      }
+    });
+  }, []);
 
   const zoomBy = useCallback((delta: number) => {
     setPpb((cur) => Math.max(4, Math.min(72, Math.round(cur + delta))));
@@ -338,7 +352,20 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
           lane.pts.forEach((p, k) => {
             const px = p.bar * ppb, py = y + rowH - 3 - p.v * (rowH - 6);
             if (k === 0) g.moveTo(px, py);
-            else g.lineTo(px, py);
+            else {
+              const prevPt = lane.pts[k - 1];
+              const segW = (p.bar - prevPt.bar) * ppb;
+              if (p.curve && Math.abs(p.curve) > 0.01 && segW > 6) {
+                const steps = Math.min(16, Math.max(4, Math.ceil(segW / 8)));
+                for (let s = 1; s <= steps; s++) {
+                  const frac = s / steps;
+                  const v = prevPt.v + (p.v - prevPt.v) * curveFactor(frac, p.curve);
+                  g.lineTo(prevPt.bar * ppb + segW * frac, y + rowH - 3 - v * (rowH - 6));
+                }
+              } else {
+                g.lineTo(px, py);
+              }
+            }
           });
           g.stroke();
           g.globalAlpha = 1;
@@ -419,23 +446,34 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  // Support Ctrl/Cmd + Wheel horizontal zoom on desktop
+  // Support DAW scroll-to-zoom (Ctrl/Cmd/Alt + Wheel anywhere, or Wheel over the top ruler/header) anchored around pointer bar
   const onWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
-      if (e.ctrlKey || e.metaKey) {
+      const sc = scRef.current;
+      if (!sc) return;
+      const rect = sc.getBoundingClientRect();
+      const overHeader = e.clientY - rect.top <= HDR_H;
+      if (e.ctrlKey || e.metaKey || e.altKey || (overHeader && Math.abs(e.deltaY) > Math.abs(e.deltaX))) {
         e.preventDefault();
-        zoomBy(e.deltaY < 0 ? 3 : -3);
+        const pointerOffsetX = Math.max(HEAD_W, e.clientX - rect.left);
+        const anchorBar = Math.max(0, (sc.scrollLeft + pointerOffsetX - HEAD_W) / ppb);
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        const next = Math.round(ppb * factor) === ppb ? ppb + (e.deltaY < 0 ? 2 : -2) : ppb * factor;
+        applyZoomAnchored(next, anchorBar, pointerOffsetX);
       }
     },
-    [zoomBy]
+    [ppb, applyZoomAnchored]
   );
 
-  // Support 2-finger pinch-to-zoom on Android / touch devices
+  // Support 2-finger pinch-to-zoom on Android / touch devices with RAF throttling & midpoint anchoring
   const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2) {
+    if (e.touches.length === 2 && scRef.current) {
+      const rect = scRef.current.getBoundingClientRect();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchRef.current = { dist: Math.hypot(dx, dy), ppb0: ppb };
+      const midX = Math.max(HEAD_W, (e.touches[0].clientX + e.touches[1].clientX) * 0.5 - rect.left);
+      const anchorBar = Math.max(0, (scRef.current.scrollLeft + midX - HEAD_W) / ppb);
+      pinchRef.current = { dist: Math.hypot(dx, dy), ppb0: ppb, anchorBar, midX };
     }
   };
   const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -445,7 +483,7 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
       const dist = Math.hypot(dx, dy);
       if (pinchRef.current.dist > 10) {
         const scale = dist / pinchRef.current.dist;
-        setPpb(Math.max(4, Math.min(72, Math.round(pinchRef.current.ppb0 * scale))));
+        applyZoomAnchored(pinchRef.current.ppb0 * scale, pinchRef.current.anchorBar, pinchRef.current.midX);
       }
     }
   };

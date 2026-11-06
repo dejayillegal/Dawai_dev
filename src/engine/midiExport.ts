@@ -226,3 +226,34 @@ export function exportClipToMidi(project: Project, track: Track, clip: Clip): Bl
   return new Blob([out], { type: 'audio/midi' });
 }
 
+/** Alias matching bundled export generator symbol `q3` for SMF Type 1 MIDI Blob generation. */
+export const q3 = exportProjectToMidi;
+
+/** Generate an SMF Type 1 MIDI blob via `q3` (`exportProjectToMidi`) and trigger a direct browser download. */
+export function downloadProjectMidi(
+  project: Project,
+  targetTrackId?: string
+): { blob: Blob; url: string; filename: string } {
+  const isSingle = !!targetTrackId && targetTrackId !== 'all';
+  const trackObj = isSingle ? project.tracks.find((t) => t.id === targetTrackId) : null;
+  const blob = q3(project, isSingle ? targetTrackId : undefined);
+  const url = URL.createObjectURL(blob);
+  const safeProject = (project.name || 'project').replace(/[^\w.-]+/g, '_');
+  const filename =
+    isSingle && trackObj
+      ? `${safeProject}_${trackObj.name.replace(/[^\w.-]+/g, '_')}.mid`
+      : `${safeProject}_smf1.mid`;
+
+  if (typeof document !== 'undefined') {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  return { blob, url, filename };
+}
+

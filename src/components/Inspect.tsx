@@ -1,8 +1,9 @@
 import { uid } from '../engine/theory';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { engine, store, useApp } from '../store';
 import { LAYERS, ROLE_COLORS, ROLE_NAMES } from '../engine/styles';
 import type { AutoParam, ProdMode, ScGroup, SynthKind, Track } from '../engine/types';
+import { evalLane } from '../engine/audio';
 import { newClipAt, regenerateSectionNow, setLayerLevel, splitSelectedAtPlayhead } from '../actions';
 import { Badge, Btn, DeviceModule, RotaryKnob, Section, Slider } from '../ui';
 import { SidechainPanel } from './Sidechain';
@@ -354,6 +355,22 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
   const app = useApp();
   const p = app.project;
   const sel = app.selection;
+  const [liveBar, setLiveBar] = useState(() => app.cursorBar);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      if (now - last >= 45) {
+        last = now;
+        const st = engine.playing ? engine.getStep() : -1;
+        setLiveBar(st >= 0 ? st / 16 : store.get().cursorBar);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const activeTrack: Track | undefined =
     sel.kind === 'track'
@@ -382,9 +399,14 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
   const def = LAYERS[t.layer];
   const up = (patch: Partial<Track>, k: string) =>
     store.dispatch({ type: 'SET_TRACK', id: t.id, patch }, `Device · ${t.name}`, 'user', `${k}:${t.id}`);
-  const lane = (param: AutoParam) => p.auto.some((a) => a.track === t.id && a.param === param);
+  const findLane = (param: AutoParam) => p.auto.find((a) => a.track === t.id && a.param === param);
+  const lane = (param: AutoParam) => !!findLane(param);
+  const liveVal = (param: AutoParam, base: number) => {
+    const l = findLane(param);
+    return l && l.pts.length ? evalLane(l, liveBar) : base;
+  };
   const ensureAutoLane = (param: AutoParam) => {
-    const exists = p.auto.find((a) => a.track === t.id && a.param === param);
+    const exists = findLane(param);
     if (!exists) {
       const tb = Math.max(32, totalBars(p));
       const base = param === 'cutoff' ? t.cutoff : param === 'res' ? t.res : param === 'rev' ? t.rev : t.vol;
@@ -397,7 +419,8 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
             param,
             pts: [
               { bar: 0, v: Math.min(1, Math.max(0, base)) },
-              { bar: tb, v: Math.min(1, Math.max(0, base)) },
+              { bar: Math.floor(tb * 0.5), v: Math.min(1, Math.max(0, base + 0.3)), curve: 0.4 },
+              { bar: tb, v: Math.min(1, Math.max(0, base)), curve: -0.35 },
             ],
           },
         },
@@ -410,6 +433,10 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
 
   const scGroup: ScGroup = t.sc ?? 'bass';
   const scCfg = p.sc[scGroup];
+  const liveCut = liveVal('cutoff', t.cutoff);
+  const liveRes = liveVal('res', t.res);
+  const liveRev = liveVal('rev', t.rev);
+  const liveVol = lane('vol') ? t.vol * liveVal('vol', 1) : t.vol;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg">
@@ -440,10 +467,10 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
           active={!t.mute}
           color={t.color}
           onToggle={() => up({ mute: !t.mute }, 'mute')}
-          className="w-[240px] shrink-0"
+          className="w-[248px] shrink-0"
           right={<Badge color={t.color}>{t.group}</Badge>}
         >
-          <label className="mb-2 block text-[9px] uppercase tracking-wider text-slate-400">
+          <label className="mb-1.5 block text-[9px] uppercase tracking-wider text-slate-400">
             Synthesizer Engine (27 Archetypes)
             <select
               aria-label="Synthesizer archetype"
@@ -459,14 +486,16 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               ))}
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-2">
+          <div className="grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-1.5">
             <RotaryKnob
               label="Volume"
               value={t.vol}
+              liveValue={liveVol}
               min={0}
               max={1.4}
               step={0.01}
               defaultValue={def?.vol ?? 0.6}
+              size={42}
               color={t.color}
               automated={lane('vol')}
               disabled={t.lock}
@@ -480,6 +509,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               max={1}
               step={0.02}
               defaultValue={0}
+              size={42}
               bipolar
               color="#38bdf8"
               disabled={t.lock}
@@ -487,7 +517,19 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               fmt={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `${Math.round(-v * 50)}L` : `${Math.round(v * 50)}R`)}
             />
           </div>
-          <div className="mt-2 flex gap-1">
+          <div className="mt-1.5">
+            <Slider
+              label="Output Gain Fader"
+              value={t.vol}
+              min={0}
+              max={1.4}
+              step={0.01}
+              disabled={t.lock}
+              onChange={(v) => up({ vol: v }, 'vol')}
+              fmt={(v) => (v > 0.001 ? `${(20 * Math.log10(v)).toFixed(1)} dB` : '-∞')}
+            />
+          </div>
+          <div className="mt-1.5 flex gap-1">
             <Btn small active={t.mute} onClick={() => up({ mute: !t.mute }, 'mute')}>
               Mute
             </Btn>
@@ -505,7 +547,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
           title="Auto Filter · 24dB Ladder"
           category="Audio Effect"
           color="#06b6d4"
-          className="w-[250px] shrink-0"
+          className="w-[262px] shrink-0"
           right={
             <Btn small tone="ghost" onClick={() => ensureAutoLane('cutoff')} title="Edit filter automation">
               {lane('cutoff') ? '● Auto' : '+ Auto'}
@@ -513,39 +555,56 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
           }
         >
           <AutoFilterPlot
-            cutoff={t.cutoff}
-            res={t.res}
+            cutoff={liveCut}
+            res={liveRes}
             color="#06b6d4"
-            disabled={t.lock || lane('cutoff')}
+            disabled={t.lock}
             onChange={(patch) => up(patch, 'filter')}
           />
-          <div className="mt-2 grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-2">
+          <div className="mt-1.5 grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-1.5">
             <RotaryKnob
               label="Filter Offset"
               value={t.cutoff}
+              liveValue={liveCut}
               min={0}
               max={1}
               step={0.01}
               defaultValue={0.5}
+              size={42}
               bipolar
               color="#06b6d4"
               automated={lane('cutoff')}
-              disabled={t.lock || lane('cutoff')}
+              disabled={t.lock}
               onChange={(v) => up({ cutoff: v }, 'cut')}
               fmt={(v) => `${Math.round((v - 0.5) * 6000)}ct`}
             />
             <RotaryKnob
               label="Resonance"
               value={t.res}
+              liveValue={liveRes}
               min={0}
               max={1}
               step={0.01}
               defaultValue={0.3}
+              size={42}
               color="#f472b6"
               automated={lane('res')}
-              disabled={t.lock || lane('res')}
+              disabled={t.lock}
               onChange={(v) => up({ res: v }, 'res')}
               fmt={(v) => `${Math.round(v * 100)}%`}
+            />
+          </div>
+          <div className="mt-1.5">
+            <Slider
+              label="Cutoff Frequency Sweep"
+              value={liveCut}
+              min={0}
+              max={1}
+              step={0.01}
+              cy={lane('cutoff')}
+              disabled={t.lock}
+              onChange={(v) => up({ cutoff: v }, 'cut')}
+              fmt={(v) => `${Math.round((v - 0.5) * 6000)} ct`}
             />
           </div>
         </DeviceModule>
@@ -555,24 +614,26 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
           title="Space · Reverb & Echo"
           category="Send Returns"
           color="#a78bfa"
-          className="w-[220px] shrink-0"
+          className="w-[238px] shrink-0"
           right={
             <Btn small tone="ghost" onClick={() => ensureAutoLane('rev')}>
               {lane('rev') ? '● Auto' : '+ Auto'}
             </Btn>
           }
         >
-          <div className="grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-2">
+          <div className="grid grid-cols-2 gap-2 rounded border border-line bg-[#0c1015] p-1.5">
             <RotaryKnob
               label="Reverb Send"
               value={t.rev}
+              liveValue={liveRev}
               min={0}
               max={1}
               step={0.01}
               defaultValue={def?.rev ?? 0.15}
+              size={42}
               color="#a78bfa"
               automated={lane('rev')}
-              disabled={t.lock || lane('rev')}
+              disabled={t.lock}
               onChange={(v) => up({ rev: v }, 'rev')}
               fmt={(v) => `${Math.round(v * 100)}%`}
             />
@@ -583,15 +644,35 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               max={1}
               step={0.01}
               defaultValue={def?.del ?? 0.1}
+              size={42}
               color="#22c55e"
               disabled={t.lock}
               onChange={(v) => up({ del: v }, 'del')}
               fmt={(v) => `${Math.round(v * 100)}%`}
             />
           </div>
-          <div className="mt-2 space-y-1 text-[9px] text-slate-400">
-            <div>Reverb: 2.8s Stereo Convolution IR (220Hz–7kHz)</div>
-            <div>Delay: Tempo-synced 3/16 Dotted Dub Feedback (46%)</div>
+          <div className="mt-1.5 space-y-1">
+            <Slider
+              label="Reverb Wet Level"
+              value={liveRev}
+              min={0}
+              max={1}
+              step={0.01}
+              cy={lane('rev')}
+              disabled={t.lock}
+              onChange={(v) => up({ rev: v }, 'rev')}
+              fmt={(v) => `${Math.round(v * 100)}%`}
+            />
+            <Slider
+              label="3/16 Dub Delay Level"
+              value={t.del}
+              min={0}
+              max={1}
+              step={0.01}
+              disabled={t.lock}
+              onChange={(v) => up({ del: v }, 'del')}
+              fmt={(v) => `${Math.round(v * 100)}%`}
+            />
           </div>
         </DeviceModule>
 
@@ -601,7 +682,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
           category="Kick Key Ducking"
           active={!!t.sc && p.scOn}
           color="#f59e0b"
-          className="w-[260px] shrink-0"
+          className="w-[264px] shrink-0"
           right={
             <select
               aria-label="Track sidechain bus"
@@ -616,7 +697,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
             </select>
           }
         >
-          <div className="grid grid-cols-3 gap-1.5 rounded border border-line bg-[#0c1015] p-2">
+          <div className="grid grid-cols-3 gap-1.5 rounded border border-line bg-[#0c1015] p-1.5">
             <RotaryKnob
               label="Threshold"
               value={scCfg.thr}
@@ -624,7 +705,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               max={0}
               step={0.5}
               defaultValue={-24}
-              size={42}
+              size={40}
               color="#f59e0b"
               disabled={!t.sc}
               onChange={(v) => store.dispatch({ type: 'SET_SC', group: scGroup, patch: { thr: v } }, 'SC Threshold')}
@@ -637,7 +718,7 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               max={20}
               step={0.5}
               defaultValue={6}
-              size={42}
+              size={40}
               color="#06b6d4"
               disabled={!t.sc}
               onChange={(v) => store.dispatch({ type: 'SET_SC', group: scGroup, patch: { ratio: v } }, 'SC Ratio')}
@@ -650,14 +731,26 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
               max={1}
               step={0.01}
               defaultValue={0.9}
-              size={42}
+              size={40}
               color="#22c55e"
               disabled={!t.sc}
               onChange={(v) => store.dispatch({ type: 'SET_SC', group: scGroup, patch: { mix: v } }, 'SC Mix')}
               fmt={(v) => `${Math.round(v * 100)}%`}
             />
           </div>
-          <div className="mt-2 flex justify-between">
+          <div className="mt-1.5">
+            <Slider
+              label="Release Time"
+              value={scCfg.rel}
+              min={30}
+              max={600}
+              step={5}
+              disabled={!t.sc}
+              onChange={(v) => store.dispatch({ type: 'SET_SC', group: scGroup, patch: { rel: v } }, 'SC Release')}
+              fmt={(v) => `${Math.round(v)} ms`}
+            />
+          </div>
+          <div className="mt-1.5 flex justify-between">
             <Btn small tone="cyan" onClick={() => store.select({ kind: 'device', id: scGroup })}>
               Full SC Scope ›
             </Btn>
