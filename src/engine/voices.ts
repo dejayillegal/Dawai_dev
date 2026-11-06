@@ -40,9 +40,15 @@ export const makeNoise = (ctx: BaseAudioContext, seed = 1) => {
 
 type Src = AudioScheduledSourceNode;
 function done(env: VEnv, srcs: Src[], endT: number, tail: AudioNode, cleanup: (() => void)[] = []) {
-  srcs.forEach((s) => {env.sources.add(s);s.stop(endT);});
+  const safeEnd = Math.max(env.ctx.currentTime + 0.01, endT);
+  srcs.forEach((s) => {env.sources.add(s); s.stop(safeEnd);});
   env.onStart();
-  srcs[0].onended = () => { srcs.forEach(s=>{env.sources.delete(s);s.disconnect();});tail.disconnect(); cleanup.forEach((f) => {try{f();}catch{/* Graph already disposed. */}}); env.onEnd(); };
+  srcs[0].onended = () => {
+    srcs.forEach(s => { env.sources.delete(s); try { s.disconnect(); } catch {} });
+    try { tail.disconnect(); } catch {}
+    cleanup.forEach((f) => { try { f(); } catch {} });
+    env.onEnd();
+  };
 }
 function bindCutoff(ctl: TrackCtl, f: BiquadFilterNode, cl: (() => void)[], res = false) {
   ctl.cutoff.connect(f.detune); cl.push(() => ctl.cutoff.disconnect(f.detune));
@@ -50,14 +56,17 @@ function bindCutoff(ctl: TrackCtl, f: BiquadFilterNode, cl: (() => void)[], res 
 }
 function adsr(p: AudioParam, t: number, a: number, peak: number, d: number, s: number, dur: number, r: number): number {
   const sus = Math.max(0.0001, s);
+  const safePeak = Math.max(0.0001, peak);
   p.setValueAtTime(0.0001, t);
-  p.linearRampToValueAtTime(peak, t + a);
+  p.linearRampToValueAtTime(safePeak, t + Math.max(0.0015, a));
   const dEnd = Math.min(t + a + d, t + Math.max(dur, a + 0.002));
-  const lvl = Math.max(0.0001, peak * Math.pow(sus, d > 0 ? Math.min(1, (dEnd - t - a) / d) : 1));
+  const lvl = Math.max(0.0001, safePeak * Math.pow(sus, d > 0 ? Math.min(1, (dEnd - t - a) / d) : 1));
   if (d > 0 && dEnd > t + a) p.exponentialRampToValueAtTime(lvl, dEnd);
   const rs = Math.max(dEnd, t + dur);
+  if (rs > dEnd + 0.001) p.setTargetAtTime(lvl, dEnd, 0.01);
   p.setValueAtTime(lvl, rs);
   p.exponentialRampToValueAtTime(0.0001, rs + r);
+  p.linearRampToValueAtTime(0, rs + r + 0.002);
   return rs + r + 0.02;
 }
 function osc(ctx: BaseAudioContext, type: OscillatorType, hz: number, t: number, detune = 0) {
@@ -68,9 +77,9 @@ function noiseSrc(env: VEnv, t: number, loop = false) {
 }
 function filt(ctx: BaseAudioContext, type: BiquadFilterType, f: number, q = 0.7) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
 const gain = (ctx: BaseAudioContext, v = 1) => { const g = ctx.createGain(); g.gain.value = v; return g; };
-/** gain that is silent and explicitly anchored at time t (a ramp with no prior event would otherwise start at scheduling time) */
-const gz = (ctx: BaseAudioContext, t: number) => { const g = ctx.createGain(); g.gain.value = 0; g.gain.setValueAtTime(0, t); return g; };
-function shaper(ctx: BaseAudioContext, k: number) { const s = ctx.createWaveShaper(); s.curve = curve(k); s.oversample = '2x'; return s; }
+/** gain that is silent and explicitly anchored at time t with micro-fade anchoring */
+const gz = (ctx: BaseAudioContext, t: number) => { const g = ctx.createGain(); g.gain.value = 0.0001; g.gain.setValueAtTime(0.0001, t); return g; };
+function shaper(ctx: BaseAudioContext, k: number) { const s = ctx.createWaveShaper(); s.curve = curve(k); return s; }
 const drift = (env: VEnv, cents = 4.5) => (env.random() * 2 - 1) * cents;
 
 export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number, durSec: number, n: Note, ctl: TrackCtl, slideFrom?: number): number | undefined {
@@ -87,11 +96,11 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const oBody = osc(ctx, 'triangle', 92, t);
       oBody.frequency.exponentialRampToValueAtTime(41, t + 0.09);
       const gBody = gz(ctx, t);
-      gBody.gain.linearRampToValueAtTime(v * 0.24, t + 0.002);
+      gBody.gain.linearRampToValueAtTime(v * 0.16, t + 0.002);
       gBody.gain.exponentialRampToValueAtTime(0.0005, t + 0.14);
       oBody.connect(gBody);
       const g = gz(ctx, t);
-      g.gain.linearRampToValueAtTime(v, t + 0.0025);
+      g.gain.linearRampToValueAtTime(v * 0.65, t + 0.0025);
       g.gain.exponentialRampToValueAtTime(0.0008, t + 0.46);
       const ws = shaper(ctx, 1.35 + env.dirt * 3.2);
       const toneLp = filt(ctx, 'lowpass', 1850, 0.65);
@@ -101,7 +110,8 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const bp = filt(ctx, 'bandpass', 780, 1.2);
       const lpClick = filt(ctx, 'lowpass', 1900, 0.7);
       const cg = gz(ctx, t);
-      cg.gain.setValueAtTime(v * 0.28, t);
+      cg.gain.setValueAtTime(0.0001, t);
+      cg.gain.linearRampToValueAtTime(v * 0.18, t + 0.001);
       cg.gain.exponentialRampToValueAtTime(0.0005, t + 0.012);
       c.connect(bp); bp.connect(lpClick); lpClick.connect(cg); cg.connect(out);
       done(env, [o, oBody, c], t + 0.5, out); break;
@@ -110,9 +120,9 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       // Deep round analog sub-bass with post-saturation low-pass filter to remove any digital harmonic buzz
       const o = osc(ctx, 'sine', hz, t, drift(env, 2));
       const o2 = osc(ctx, 'triangle', hz, t, drift(env, 3));
-      const g2 = gain(ctx, 0.26); o2.connect(g2);
+      const g2 = gain(ctx, 0.22); o2.connect(g2);
       const g = gz(ctx, t);
-      const e = adsr(g.gain, t, 0.008, v * 0.88, 0.07, 0.88, durSec, 0.085);
+      const e = adsr(g.gain, t, 0.008, v * 0.55, 0.07, 0.88, durSec, 0.085);
       const ws = shaper(ctx, 1.45);
       const subLp = filt(ctx, 'lowpass', Math.min(210, hz * 3.2), 0.75);
       o.connect(g); g2.connect(g); g.connect(ws); ws.connect(subLp); subLp.connect(out);
@@ -123,16 +133,16 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const subHz = Math.max(28, hz <= 48 ? hz : hz * 0.5);
       const oSub = osc(ctx, 'sine', subHz, t, drift(env, 2.5));
       const oBody = osc(ctx, 'triangle', subHz, t, -4 + drift(env, 3));
-      const gBody = gain(ctx, 0.55); oBody.connect(gBody);
+      const gBody = gain(ctx, 0.42); oBody.connect(gBody);
       const nRumble = noiseSrc(env, t, true);
       const nBp = filt(ctx, 'bandpass', subHz * 1.6, 1.4);
-      const gNoise = gain(ctx, 0.22);
+      const gNoise = gain(ctx, 0.16);
       nRumble.connect(nBp); nBp.connect(gNoise);
       const lp1 = filt(ctx, 'lowpass', 88, 1.15); bindCutoff(ctl, lp1, cl, true);
       const ws = shaper(ctx, 2.1 + env.dirt * 1.1);
       const lp2 = filt(ctx, 'lowpass', 128, 0.75); // Post-shaper lowpass eliminates all digital upper-harmonic buzz
       const g = gz(ctx, t);
-      const e = adsr(g.gain, t, 0.028, v * 0.94, 0.36, 0.28, durSec, 0.26);
+      const e = adsr(g.gain, t, 0.028, v * 0.48, 0.36, 0.28, durSec, 0.26);
       oSub.connect(lp1); gBody.connect(lp1); gNoise.connect(lp1);
       lp1.connect(ws); ws.connect(lp2); lp2.connect(g); g.connect(out);
       done(env, [oSub, oBody, nRumble], e, out, cl); break;
@@ -142,121 +152,133 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const f = hz <= 55 ? hz * 2 : hz;
       const o = osc(ctx, 'sawtooth', f, t, drift(env, 4));
       const o2 = osc(ctx, 'triangle', f * 0.5, t, 4 + drift(env, 3));
-      const mix = gain(ctx, 0.65); o2.connect(mix);
+      const mix = gain(ctx, 0.52); o2.connect(mix);
       const lp1 = filt(ctx, 'lowpass', 250, 2.4);
       lp1.frequency.setValueAtTime(250 * Math.pow(2, 1.35 * v), t);
       lp1.frequency.exponentialRampToValueAtTime(240, t + 0.15);
       bindCutoff(ctl, lp1, cl, true);
       const ws = shaper(ctx, 1.3 + env.dirt * 1.8);
       const lp2 = filt(ctx, 'lowpass', 1350, 0.7);
-      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.005, v * 0.64, 0.11, 0.55, durSec, 0.045);
+      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.005, v * 0.42, 0.11, 0.55, durSec, 0.045);
       o.connect(lp1); mix.connect(lp1); lp1.connect(ws); ws.connect(lp2); lp2.connect(g); g.connect(out);
       done(env, [o, o2], e, out, cl); break;
     }
     case 'acid': {
-      // Warm analog TB-303 diode-ladder voice with organic drift and post-saturation speaker rolloff
-      const o = osc(ctx, 'sawtooth', hz, t, drift(env, 3.5));
-      const oSub = osc(ctx, 'triangle', hz, t, -3);
-      const gSub = gain(ctx, 0.35); oSub.connect(gSub);
+      // Authentic TB-303 diode-ladder voice: square/saw waveform toggle, dynamic accent resonance (up to 7.5kHz), and organic glide
+      const isSquare = (n.p % 2 === 1 && !n.acc) || (n.acc && (n.p % 4 === 1));
+      const o = osc(ctx, isSquare ? 'square' : 'sawtooth', hz, t, drift(env, 3));
+      const oSub = osc(ctx, 'triangle', hz * 0.5, t, -3);
+      const gSub = gain(ctx, 0.22); oSub.connect(gSub);
       if (slideFrom) {
         o.frequency.setValueAtTime(slideFrom, t); o.frequency.exponentialRampToValueAtTime(hz, t + 0.065);
-        oSub.frequency.setValueAtTime(slideFrom, t); oSub.frequency.exponentialRampToValueAtTime(hz, t + 0.065);
+        oSub.frequency.setValueAtTime(slideFrom * 0.5, t); oSub.frequency.exponentialRampToValueAtTime(hz * 0.5, t + 0.065);
       }
-      const lp = filt(ctx, 'lowpass', 260, 2.8); const acc = !!n.acc;
-      if (slideFrom) lp.frequency.setValueAtTime(260 * 1.9, t);
-      else {
-        lp.frequency.setValueAtTime(260 * Math.pow(2, acc ? 2.65 : 1.75), t);
-        lp.frequency.exponentialRampToValueAtTime(250, t + (acc ? 0.13 : 0.21));
+      const acc = !!n.acc;
+      const baseCut = acc ? 750 : 360;
+      const peakCut = acc ? 7200 : 2800;
+      const lp = filt(ctx, 'lowpass', baseCut, acc ? 4.2 : 2.6);
+      if (slideFrom) {
+        lp.frequency.setValueAtTime(peakCut * 0.7, t);
+        lp.frequency.exponentialRampToValueAtTime(baseCut, t + 0.12);
+      } else {
+        lp.frequency.setValueAtTime(peakCut, t);
+        lp.frequency.exponentialRampToValueAtTime(baseCut, t + (acc ? 0.16 : 0.22));
       }
       bindCutoff(ctl, lp, cl, true);
-      const ws = shaper(ctx, 1.9 + env.dirt * 1.5);
-      const postLp = filt(ctx, 'lowpass', 2900, 0.65);
+      const ws = shaper(ctx, (acc ? 2.6 : 1.7) + env.dirt * 1.5);
+      const postLp = filt(ctx, 'lowpass', acc ? 6800 : 4200, 0.65);
       const g = gz(ctx, t);
-      const e = adsr(g.gain, t, 0.004, v * (acc ? 0.58 : 0.44), 0.09, 0.72, durSec + (slideFrom ? 0.025 : 0), 0.035);
+      const e = adsr(g.gain, t, 0.003, v * (acc ? 0.42 : 0.32), 0.08, 0.7, durSec + (slideFrom ? 0.025 : 0), 0.038);
       o.connect(lp); gSub.connect(lp); lp.connect(ws); ws.connect(postLp); postLp.connect(g); g.connect(out);
       done(env, [o, oSub], e, out, cl); break;
     }
     case 'stab': {
-      // Dark, warm analog warehouse chord stab (detuned VCOs + triangle body + cascaded 24dB ladder filter)
-      const o = osc(ctx, 'sawtooth', hz, t, -8 + drift(env, 4));
-      const o2 = osc(ctx, 'sawtooth', hz, t, 8 + drift(env, 4));
-      const o3 = osc(ctx, 'triangle', hz, t, drift(env, 2));
-      const g3 = gain(ctx, 0.55); o3.connect(g3);
-      const lp1 = filt(ctx, 'lowpass', 410, 2.1);
-      lp1.frequency.setValueAtTime(410 * Math.pow(2, 1.85), t);
-      lp1.frequency.exponentialRampToValueAtTime(380, t + 0.18);
+      // Punchy, wide detuned supersaw / square stabs with fast filter envelope (600Hz -> 5200Hz) and distinct bite
+      const o = osc(ctx, 'sawtooth', hz, t, -12 + drift(env, 4));
+      const o2 = osc(ctx, 'sawtooth', hz, t, 12 + drift(env, 4));
+      const o3 = osc(ctx, 'square', hz, t, drift(env, 2));
+      const g3 = gain(ctx, 0.45); o3.connect(g3);
+      const hp = filt(ctx, 'highpass', 140, 0.7);
+      const lp1 = filt(ctx, 'lowpass', 650, 2.6);
+      lp1.frequency.setValueAtTime(5400, t);
+      lp1.frequency.exponentialRampToValueAtTime(750, t + 0.14);
       bindCutoff(ctl, lp1, cl, true);
-      const ws = shaper(ctx, 1.45 + env.dirt * 1.1);
-      const lp2 = filt(ctx, 'lowpass', 2200, 0.75);
+      const ws = shaper(ctx, 1.4 + env.dirt * 1.1);
+      const lp2 = filt(ctx, 'lowpass', 5800, 0.7);
       const g = gz(ctx, t);
-      const e = adsr(g.gain, t, 0.005, v * 0.25, 0.18, 0.16, Math.min(durSec, 0.28), 0.12);
-      o.connect(lp1); o2.connect(lp1); g3.connect(lp1);
+      const e = adsr(g.gain, t, 0.003, v * 0.32, 0.14, 0.2, Math.min(durSec, 0.28), 0.09);
+      o.connect(hp); o2.connect(hp); g3.connect(hp); hp.connect(lp1);
       lp1.connect(ws); ws.connect(lp2); lp2.connect(g); g.connect(out);
       done(env, [o, o2, o3], e, out, cl); break;
     }
     case 'lead': {
-      const o = osc(ctx, 'sawtooth', hz, t, -6 + drift(env, 4));
-      const o2 = osc(ctx, 'triangle', hz, t, 6 + drift(env, 4));
-      const g2 = gain(ctx, 0.65); o2.connect(g2);
-      const lfo = osc(ctx, 'sine', 4.6, t); const ld = gain(ctx, 9); lfo.connect(ld); ld.connect(o.detune); ld.connect(o2.detune);
-      const lp = filt(ctx, 'lowpass', 1450, 1.4); bindCutoff(ctl, lp, cl, true);
-      const ws = shaper(ctx, 1.35);
-      const postLp = filt(ctx, 'lowpass', 3200, 0.7);
-      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.012, v * 0.26, 0.22, 0.68, durSec, 0.22);
-      o.connect(lp); g2.connect(lp); lp.connect(ws); ws.connect(postLp); postLp.connect(g); g.connect(out);
-      done(env, [o, o2, lfo], e, out, cl); break;
+      // Soaring anthem lead: triple detuned VCOs + pitch vibrato LFO + bright filter presence (up to 7.5kHz)
+      const o = osc(ctx, 'sawtooth', hz, t, -9 + drift(env, 4));
+      const o2 = osc(ctx, 'square', hz, t, 9 + drift(env, 4));
+      const oSub = osc(ctx, 'triangle', hz * 0.5, t, drift(env, 2));
+      const g2 = gain(ctx, 0.55); o2.connect(g2);
+      const gSub = gain(ctx, 0.35); oSub.connect(gSub);
+      const lfo = osc(ctx, 'sine', 5.2, t); const ld = gain(ctx, 11); lfo.connect(ld); ld.connect(o.detune); ld.connect(o2.detune);
+      const lp = filt(ctx, 'lowpass', 1200, 1.6);
+      lp.frequency.setValueAtTime(7500, t);
+      lp.frequency.exponentialRampToValueAtTime(1450, t + 0.22);
+      bindCutoff(ctl, lp, cl, true);
+      const ws = shaper(ctx, 1.4);
+      const postLp = filt(ctx, 'lowpass', 6800, 0.7);
+      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.008, v * 0.3, 0.2, 0.72, durSec, 0.18);
+      o.connect(lp); g2.connect(lp); gSub.connect(lp); lp.connect(ws); ws.connect(postLp); postLp.connect(g); g.connect(out);
+      done(env, [o, o2, oSub, lfo], e, out, cl); break;
     }
     case 'arp': {
-      // Warm analog modular VCO sequence pluck (SH-101 / Buchla low-pass gate style, zero glassy sine-FM bell artifacts)
+      // Crystal modular FM pluck (SH-101 / Buchla low-pass gate style): snappy envelope sweep up to 6.8kHz + metallic FM transient
       const acc = !!n.acc;
-      const vco1 = osc(ctx, 'sawtooth', hz, t, -5 + drift(env, 4.5));
-      const vco2 = osc(ctx, 'triangle', hz, t, 5 + drift(env, 4.5));
+      const vco1 = osc(ctx, 'sawtooth', hz, t, -6 + drift(env, 4));
+      const vco2 = osc(ctx, 'square', hz, t, 6 + drift(env, 4));
       const subOsc = osc(ctx, 'sine', hz * 0.5, t, drift(env, 2));
-      const gVco1 = gain(ctx, 0.58); vco1.connect(gVco1);
-      const gSub = gain(ctx, 0.42); subOsc.connect(gSub);
-      // Subtle analog cross-modulation transient for woody modular pluck
-      const xmod = osc(ctx, 'triangle', hz * 1.5, t);
+      const gVco1 = gain(ctx, 0.55); vco1.connect(gVco1);
+      const gSub = gain(ctx, 0.38); subOsc.connect(gSub);
+      // FM cross-mod transient for crisp woody/glassy pluck
+      const xmod = osc(ctx, 'triangle', hz * 2.73, t);
       const xmodGain = gz(ctx, t);
-      xmodGain.gain.setValueAtTime(hz * (acc ? 0.55 : 0.32), t);
-      xmodGain.gain.exponentialRampToValueAtTime(1, t + 0.042);
+      xmodGain.gain.setValueAtTime(hz * (acc ? 0.85 : 0.45), t);
+      xmodGain.gain.exponentialRampToValueAtTime(1, t + 0.032);
       xmod.connect(xmodGain); xmodGain.connect(vco2.frequency);
-      // Cascaded 24dB/oct warm analog low-pass ladder with tape saturation
-      const baseCut = 340;
-      const lp1 = filt(ctx, 'lowpass', baseCut, 2.35);
-      lp1.frequency.setValueAtTime(baseCut * Math.pow(2, acc ? 2.15 : 1.55), t);
-      lp1.frequency.exponentialRampToValueAtTime(baseCut, t + (acc ? 0.14 : 0.11));
+      const baseCut = 480;
+      const lp1 = filt(ctx, 'lowpass', baseCut, 2.6);
+      lp1.frequency.setValueAtTime(acc ? 6800 : 4600, t);
+      lp1.frequency.exponentialRampToValueAtTime(baseCut, t + (acc ? 0.12 : 0.09));
       bindCutoff(ctl, lp1, cl, true);
-      const ws = shaper(ctx, 1.55 + env.dirt * 1.1);
-      const lp2 = filt(ctx, 'lowpass', 1950, 0.8); bindCutoff(ctl, lp2, cl, false);
+      const ws = shaper(ctx, 1.45 + env.dirt * 1.1);
+      const lp2 = filt(ctx, 'lowpass', 5200, 0.75); bindCutoff(ctl, lp2, cl, false);
       const g = gz(ctx, t);
-      const e = adsr(g.gain, t, 0.0035, v * (acc ? 0.38 : 0.3), 0.13, 0.12, Math.min(durSec, 0.22), 0.09);
+      const e = adsr(g.gain, t, 0.002, v * (acc ? 0.42 : 0.34), 0.1, 0.1, Math.min(durSec, 0.2), 0.07);
       gVco1.connect(lp1); vco2.connect(lp1); gSub.connect(lp1);
       lp1.connect(ws); ws.connect(lp2); lp2.connect(g); g.connect(out);
       done(env, [vco1, vco2, subOsc, xmod], e, out, cl); break;
     }
     case 'pad': {
-      const os = [-11, 0, 11].map((d) => osc(ctx, 'sawtooth', hz, t, d + drift(env, 3.5)));
+      const os = [-14, 0, 14].map((d) => osc(ctx, 'sawtooth', hz, t, d + drift(env, 3.5)));
       const sub = osc(ctx, 'triangle', hz * 0.5, t, drift(env, 2));
-      const gSub = gain(ctx, 0.32); sub.connect(gSub);
-      const lp = filt(ctx, 'lowpass', 520, 1.05); bindCutoff(ctl, lp, cl, true);
+      const gSub = gain(ctx, 0.35); sub.connect(gSub);
+      const lp = filt(ctx, 'lowpass', 780, 1.1); bindCutoff(ctl, lp, cl, true);
       const ws = shaper(ctx, 1.25);
-      const postLp = filt(ctx, 'lowpass', 1800, 0.7);
-      const g = gz(ctx, t); const e = adsr(g.gain, t, Math.min(1.4, durSec * 0.35), v * 0.12, 0.01, 1, durSec, 1.2);
+      const postLp = filt(ctx, 'lowpass', 3200, 0.7);
+      const g = gz(ctx, t); const e = adsr(g.gain, t, Math.min(1.4, durSec * 0.35), v * 0.16, 0.01, 1, durSec, 1.2);
       os.forEach((o) => o.connect(lp)); gSub.connect(lp); lp.connect(ws); ws.connect(postLp); postLp.connect(g); g.connect(out);
       done(env, [...os, sub], e, out, cl); break;
     }
     case 'dubchord': {
-      // Warm analog dub techno chord tank: detuned saws + warm triangle + liquid 24dB tape-filtered envelope
-      const o = osc(ctx, 'sawtooth', hz, t, -7 + drift(env, 4));
-      const o2 = osc(ctx, 'sawtooth', hz, t, 7 + drift(env, 4));
-      const o3 = osc(ctx, 'triangle', hz, t, drift(env, 2.5));
-      const lp1 = filt(ctx, 'lowpass', 360, 2.4);
-      lp1.frequency.setValueAtTime(360 * Math.pow(2, 1.95), t);
-      lp1.frequency.exponentialRampToValueAtTime(320, t + 0.46);
+      // Liquid cavernous dub techno chord tank: detuned saws + minor chord stack + 24dB tape-filtered sweep (3200Hz -> 380Hz)
+      const o = osc(ctx, 'sawtooth', hz, t, -8 + drift(env, 4));
+      const o2 = osc(ctx, 'sawtooth', hz, t, 8 + drift(env, 4));
+      const o3 = osc(ctx, 'triangle', hz * 1.2, t, drift(env, 2.5));
+      const lp1 = filt(ctx, 'lowpass', 380, 2.5);
+      lp1.frequency.setValueAtTime(3200, t);
+      lp1.frequency.exponentialRampToValueAtTime(380, t + 0.38);
       bindCutoff(ctl, lp1, cl, true);
-      const ws = shaper(ctx, 1.4 + env.dirt * 0.8);
-      const lp2 = filt(ctx, 'lowpass', 1750, 0.75);
-      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.008, v * 0.22, 0.44, 0.06, durSec, 0.32);
+      const ws = shaper(ctx, 1.45 + env.dirt * 0.8);
+      const lp2 = filt(ctx, 'lowpass', 3400, 0.75);
+      const g = gz(ctx, t); const e = adsr(g.gain, t, 0.006, v * 0.28, 0.38, 0.08, durSec, 0.35);
       o.connect(lp1); o2.connect(lp1); o3.connect(lp1);
       lp1.connect(ws); ws.connect(lp2); lp2.connect(g); g.connect(out);
       done(env, [o, o2, o3], e, out, cl); break;
@@ -391,105 +413,111 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       done(env, [car, mod], t + 0.32, out); break;
     }
     case 'riser': {
-      // Warm tape-swept analog riser / modular tension swell: dark filtered noise + warm triangle sub/mid sweep with tape saturation
-      const dur = n.d * env.stepDur;
+      // High-energy dramatic pitch-rising synth & noise swell: dual VCOs (sine/saw) climbing 65Hz -> 2400Hz + sweep filter opening up to 12.5kHz
+      const dur = Math.max(0.4, n.d * env.stepDur);
       const s = noiseSrc(env, t, true);
-      const bp = filt(ctx, 'bandpass', 240, 1.8);
-      bp.frequency.setValueAtTime(240, t);
-      bp.frequency.exponentialRampToValueAtTime(3200, t + dur);
+      const bp = filt(ctx, 'bandpass', 320, 1.6);
+      bp.frequency.setValueAtTime(320, t);
+      bp.frequency.exponentialRampToValueAtTime(11500, t + dur);
       const g = gz(ctx, t);
-      g.gain.setValueAtTime(0.005, t);
-      g.gain.exponentialRampToValueAtTime(v * 0.42, t + dur * 0.98);
+      g.gain.setValueAtTime(0.004, t);
+      g.gain.exponentialRampToValueAtTime(v * 0.52, t + dur * 0.98);
       g.gain.linearRampToValueAtTime(0, t + dur + 0.04);
 
-      // Warm analog VCO swell (triangle/sine rising into warm saturation, no piercing high sawtooth whine)
-      const o = osc(ctx, 'triangle', 75, t, drift(env, 3));
-      o.frequency.exponentialRampToValueAtTime(580, t + dur);
-      const lp = filt(ctx, 'lowpass', 1100, 1.1);
+      const o = osc(ctx, 'sawtooth', 65, t, drift(env, 3));
+      o.frequency.exponentialRampToValueAtTime(2200, t + dur);
+      const o2 = osc(ctx, 'sine', 130, t, drift(env, 2));
+      o2.frequency.exponentialRampToValueAtTime(3400, t + dur);
+      const o2Gain = gain(ctx, 0.6); o2.connect(o2Gain);
+
+      const lp = filt(ctx, 'lowpass', 800, 1.2);
+      lp.frequency.setValueAtTime(800, t);
+      lp.frequency.exponentialRampToValueAtTime(9500, t + dur);
       const og = gz(ctx, t);
       og.gain.setValueAtTime(0.001, t);
-      og.gain.exponentialRampToValueAtTime(v * 0.18, t + dur * 0.98);
+      og.gain.exponentialRampToValueAtTime(v * 0.32, t + dur * 0.98);
       og.gain.linearRampToValueAtTime(0, t + dur + 0.04);
 
-      const ws = shaper(ctx, 1.45 + env.dirt * 0.8);
-      const postLp = filt(ctx, 'lowpass', 3600, 0.7);
-
+      const ws = shaper(ctx, 1.5 + env.dirt * 0.8);
       s.connect(bp); bp.connect(g); g.connect(ws);
-      o.connect(lp); lp.connect(og); og.connect(ws);
-      ws.connect(postLp); postLp.connect(out);
-      done(env, [s, o], t + dur + 0.06, out); break;
+      o.connect(lp); o2Gain.connect(lp); lp.connect(og); og.connect(ws);
+      ws.connect(out);
+      done(env, [s, o, o2], t + dur + 0.06, out); break;
     }
     case 'impact': {
-      // Subterranean concrete warehouse impact: deep 909-style sub-thud + tape-damped acoustic boom (no cheesy white-noise explosion)
-      const o = osc(ctx, 'sine', 95, t);
-      o.frequency.exponentialRampToValueAtTime(42, t + 0.08);
-      o.frequency.exponentialRampToValueAtTime(28, t + 0.75);
+      // Massive subterranean warehouse impact: deep pitch-dropping sub-boom (140Hz -> 24Hz) + explosive pressure slap burst + wide tail
+      const o = osc(ctx, 'sine', 140, t);
+      o.frequency.exponentialRampToValueAtTime(42, t + 0.06);
+      o.frequency.exponentialRampToValueAtTime(24, t + 0.85);
       const g = gz(ctx, t);
-      g.gain.linearRampToValueAtTime(v * 0.9, t + 0.004);
+      g.gain.linearRampToValueAtTime(v * 0.95, t + 0.003);
       g.gain.exponentialRampToValueAtTime(0.0004, t + 1.4);
 
-      // Warm acoustic room/vault pressure burst
+      // Explosive room slap pressure burst
       const s = noiseSrc(env, t);
-      const lpNoise = filt(ctx, 'lowpass', 420, 1.2);
+      const bpNoise = filt(ctx, 'bandpass', 2400, 1.1);
       const ng = gz(ctx, t);
-      ng.gain.setValueAtTime(v * 0.28, t);
-      ng.gain.exponentialRampToValueAtTime(0.0004, t + 0.38);
+      ng.gain.setValueAtTime(v * 0.45, t);
+      ng.gain.exponentialRampToValueAtTime(0.0004, t + 0.28);
 
-      const ws = shaper(ctx, 1.5);
-      const postLp = filt(ctx, 'lowpass', 650, 0.7);
+      const ws = shaper(ctx, 1.6);
+      const postLp = filt(ctx, 'lowpass', 3800, 0.7);
       o.connect(g); g.connect(ws);
-      s.connect(lpNoise); lpNoise.connect(ng); ng.connect(ws);
+      s.connect(bpNoise); bpNoise.connect(ng); ng.connect(ws);
       ws.connect(postLp); postLp.connect(out);
       done(env, [o, s], t + 1.45, out); break;
     }
     case 'downlift': {
-      // Dark tape wash / low-frequency resonant exhale: filtered organic noise descending into subterranean sub
-      const dur = n.d * env.stepDur;
+      // Dark downward tension release: descending pitch sub sweep (1800Hz -> 38Hz) + resonant noise exhale
+      const dur = Math.max(0.4, n.d * env.stepDur);
       const s = noiseSrc(env, t, true);
-      const bp = filt(ctx, 'bandpass', 2400, 1.4);
-      bp.frequency.setValueAtTime(2400, t);
-      bp.frequency.exponentialRampToValueAtTime(140, t + dur);
+      const bp = filt(ctx, 'bandpass', 5800, 1.4);
+      bp.frequency.setValueAtTime(5800, t);
+      bp.frequency.exponentialRampToValueAtTime(120, t + dur);
       const g = gz(ctx, t);
-      g.gain.linearRampToValueAtTime(v * 0.35, t + 0.02);
+      g.gain.linearRampToValueAtTime(v * 0.42, t + 0.015);
       g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
 
-      // Low-frequency sub exhale
-      const o = osc(ctx, 'sine', 110, t);
-      o.frequency.exponentialRampToValueAtTime(30, t + dur * 0.7);
+      const o = osc(ctx, 'sine', 180, t);
+      o.frequency.exponentialRampToValueAtTime(32, t + dur * 0.8);
       const og = gz(ctx, t);
-      og.gain.linearRampToValueAtTime(v * 0.28, t + 0.02);
+      og.gain.linearRampToValueAtTime(v * 0.38, t + 0.015);
       og.gain.exponentialRampToValueAtTime(0.0008, t + dur * 0.85);
 
-      const postLp = filt(ctx, 'lowpass', 2800, 0.7);
+      const postLp = filt(ctx, 'lowpass', 6200, 0.7);
       s.connect(bp); bp.connect(g); g.connect(postLp);
       o.connect(og); og.connect(postLp); postLp.connect(out);
       done(env, [s, o], t + dur + 0.05, out); break;
     }
     case 'crash': {
-      // Warm analog reverse swell / tape splash (dark 909-style metallic wash, no brittle digital sizzle)
+      // Explosive high-energy crash splash or reverse swell: 6 inharmonic metallic square oscillators + airy highpass noise (up to 14kHz)
       const s = noiseSrc(env, t, true);
+      const dur = Math.max(0.4, n.d * env.stepDur);
       if (n.p === 1) {
         // Reverse swell into drop
-        const dur = n.d * env.stepDur;
         const bp = filt(ctx, 'bandpass', 1200, 1.2);
         bp.frequency.setValueAtTime(350, t);
-        bp.frequency.exponentialRampToValueAtTime(2600, t + dur);
-        const tapeLp = filt(ctx, 'lowpass', 4500, 0.7);
+        bp.frequency.exponentialRampToValueAtTime(6800, t + dur);
+        const tapeLp = filt(ctx, 'lowpass', 11000, 0.7);
         const g = gz(ctx, t);
         g.gain.setValueAtTime(0.001, t);
-        g.gain.exponentialRampToValueAtTime(v * 0.42, t + dur * 0.98);
+        g.gain.exponentialRampToValueAtTime(v * 0.48, t + dur * 0.98);
         g.gain.linearRampToValueAtTime(0, t + dur + 0.02);
         s.connect(bp); bp.connect(tapeLp); tapeLp.connect(g); g.connect(out);
         done(env, [s], t + dur + 0.04, out);
       } else {
-        // Dark metallic crash splash with warm tape rolloff
-        const bp = filt(ctx, 'bandpass', 3800, 0.8);
-        const tapeLp = filt(ctx, 'lowpass', 5800, 0.7);
+        // High-energy metallic crash splash
+        const m1 = osc(ctx, 'square', 384, t, drift(env, 4));
+        const m2 = osc(ctx, 'square', 612, t, drift(env, 4));
+        const m3 = osc(ctx, 'square', 940, t, drift(env, 4));
+        const mMix = gain(ctx, 0.16); m1.connect(mMix); m2.connect(mMix); m3.connect(mMix);
+        const hp = filt(ctx, 'highpass', 3400, 0.7);
+        const tapeLp = filt(ctx, 'lowpass', 12500, 0.7);
         const g = gz(ctx, t);
-        g.gain.linearRampToValueAtTime(v * 0.32, t + 0.002);
+        g.gain.linearRampToValueAtTime(v * 0.45, t + 0.0015);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
-        s.connect(bp); bp.connect(tapeLp); tapeLp.connect(g); g.connect(out);
-        done(env, [s], t + 1.45, out);
+        s.connect(hp); mMix.connect(hp); hp.connect(tapeLp); tapeLp.connect(g); g.connect(out);
+        done(env, [s, m1, m2, m3], t + 1.45, out);
       }
       break;
     }

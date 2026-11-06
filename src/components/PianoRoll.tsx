@@ -351,31 +351,31 @@ export function PianoRoll() {
 
         {(['draw', 'accent', 'slide', 'erase'] as Tool[]).map((k) => (
           <Btn key={k} small active={tool === k} onClick={() => setTool(k)} title={`${k} tool`}>
-            {k === 'accent' ? 'Accent' : k === 'slide' ? 'Slide' : k === 'draw' ? 'Draw' : 'Erase'}
+            {k === 'draw' ? '✏ Draw Note' : k === 'accent' ? '⚡ Accent (+dB)' : k === 'slide' ? '⌇ Slide (Glide)' : '⌫ Erase Note'}
           </Btn>
         ))}
-        <select aria-label="Snap" value={snap} onChange={(e) => setSnap(+e.target.value)} className="h-6 text-[10px]">
-          <option value={1}>1/16</option>
-          <option value={0.5}>1/32</option>
-          <option value={0.25}>1/64</option>
-          <option value={2}>1/8</option>
-          <option value={4}>1/4</option>
+        <select aria-label="Snap resolution" value={snap} onChange={(e) => setSnap(+e.target.value)} className="h-6 text-[10px]">
+          <option value={1}>Snap: 1/16 Step</option>
+          <option value={0.5}>Snap: 1/32 Step</option>
+          <option value={0.25}>Snap: 1/64 Step</option>
+          <option value={2}>Snap: 1/8 Step</option>
+          <option value={4}>Snap: 1/4 Beat</option>
         </select>
         <select
-          aria-label="Note length"
+          aria-label="Default Note Length"
           onChange={(e) => (lastD.current = +e.target.value)}
           defaultValue="1"
           className="h-6 text-[10px]"
         >
-          <option value="0.5">len ½</option>
-          <option value="1">len 1</option>
-          <option value="2">len 2</option>
-          <option value="4">len 4</option>
-          <option value="8">len 8</option>
+          <option value="0.5">Note Len: ½ Step</option>
+          <option value="1">Note Len: 1 Step</option>
+          <option value="2">Note Len: 2 Steps</option>
+          <option value="4">Note Len: 1 Bar</option>
+          <option value="8">Note Len: 2 Bars</option>
         </select>
 
         {/* Piano Roll Zoom with - / + buttons */}
-        <div className="flex items-center gap-1 rounded border border-line bg-[#0e1216] px-1 py-0.5">
+        <div className="flex items-center gap-1 rounded border border-line bg-[#0e1216] px-1 py-0.5" title="Piano Roll horizontal zoom">
           <button
             type="button"
             aria-label="Zoom out piano roll"
@@ -417,19 +417,20 @@ export function PianoRoll() {
           )}{' '}
           steps
         </span>
-        <span className="flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-slate-400">
+        <span className="flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-slate-400" title="Euclidean rhythm generator: k=hits, n=steps, rot=rotation">
           Euclid k{num(eu.k, (k) => setEu({ ...eu, k }), 1, 32, 'w-10')} n{num(eu.n, (n) => setEu({ ...eu, n }), 2, 64, 'w-10')}{' '}
           rot{num(eu.rot, (rot) => setEu({ ...eu, rot }), 0, 63, 'w-10')}{' '}
           {!single && <>♪{num(eu.pitch, (pitch) => setEu({ ...eu, pitch }), 0, 127, 'w-11')}</>}
-          <Btn small tone="amber" onClick={applyEu}>
+          <Btn small tone="amber" onClick={applyEu} title="Generate Euclidean pattern into active clip">
             Apply
           </Btn>
         </span>
-        <Btn small onClick={() => commit(notes.map((n) => ({ ...n, t: Math.round(n.t), micro: 0 })), 'Quantize')}>
-          Quantize
+        <Btn small onClick={() => commit(notes.map((n) => ({ ...n, t: Math.round(n.t), micro: 0 })), 'Quantize')} title="Snap note start times to exact 16th-note grid">
+          Quantize Grid
         </Btn>
         <Btn
           small
+          title="Add subtle analog micro-timing and velocity variations"
           onClick={() => {
             const r = new Rng(Date.now());
             commit(
@@ -442,10 +443,11 @@ export function PianoRoll() {
             );
           }}
         >
-          Humanize
+          Humanize Timing
         </Btn>
         <Btn
           small
+          title="Generate algorithmic variations (octave shifts, rests, accents)"
           onClick={() =>
             commit(
               mutate(notes, c.loop, new Rng(Date.now()).pick(['oct', 'rot', 'acc', 'rest'] as const), new Rng(Date.now() + 1)),
@@ -453,7 +455,7 @@ export function PianoRoll() {
             )
           }
         >
-          Mutate
+          Evolve Notes (Mutate)
         </Btn>
         <Btn
           small
@@ -469,10 +471,10 @@ export function PianoRoll() {
             URL.revokeObjectURL(url);
           }}
         >
-          Export MIDI
+          Export Clip MIDI
         </Btn>
-        <Btn small tone="ghost" onClick={() => commit([], 'Clear notes')}>
-          Clear
+        <Btn small tone="ghost" onClick={() => commit([], 'Clear notes')} title="Delete all notes in active clip">
+          Delete All Notes
         </Btn>
         <span className="ml-auto font-mono text-[10px] tabular-nums text-slate-500">
           {notes.length} notes · {KEY_NAMES[p.params.key]} {p.params.scale}

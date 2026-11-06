@@ -124,7 +124,13 @@ export class Store {
     try{this.repository.save(this.s.project);this.set({saveStatus:this.durableBlocked?'Database save unavailable':this.hydrating?'Opening database…':this.pendingWrites?'Saving…':'Saved'});return true;}
     catch(e){this.set({saveStatus:'Save failed',error:e instanceof Error?e.message:String(e)});return false;}
   }
-  clearError(){this.set({error:null});}
+  clearError() {
+    if (this.s.databaseRecovery) {
+      void this.keepCurrentRecovery();
+    } else {
+      this.set({ error: null });
+    }
+  }
   reportError(e:unknown){this.set({error:e instanceof Error?e.message:String(e)});}
   acceptProposal(id:string){
     const pr=this.s.proposals.find(p=>p.id===id);

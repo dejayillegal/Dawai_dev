@@ -26,8 +26,8 @@ input, select, textarea, button { font: inherit; color: inherit; }
 input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; height: 18px; width: 100%; cursor: pointer; margin: 0; }
 input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: #2a323d; border-radius: 4px; }
 input[type="range"]::-moz-range-track { height: 4px; background: #2a323d; border-radius: 4px; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b; margin-top: -4px; border: 2px solid #0b0d10; }
-input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; border: 2px solid #0b0d10; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--color-amber, #f59e0b); margin-top: -4px; border: 2px solid #0b0d10; }
+input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--color-amber, #f59e0b); border: 2px solid #0b0d10; }
 input[type="range"].cy::-webkit-slider-thumb { background: #06b6d4; }
 input[type="range"].cy::-moz-range-thumb { background: #06b6d4; }
 input[type="range"]:focus-visible { outline: 2px solid #06b6d4; outline-offset: 2px; border-radius: 4px; }

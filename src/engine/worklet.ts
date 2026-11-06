@@ -58,7 +58,7 @@ class SidechainComp extends AudioWorkletProcessor {
       if (effectiveGr > this.maxGr) this.maxGr = effectiveGr;
       if (db > this.maxKey) this.maxKey = db;
     }
-    if (this.metering && ++this.q >= 6) {
+    if (this.metering && ++this.q >= 24) {
       this.port.postMessage({ gr: this.maxGr, key: this.maxKey });
       this.q = 0; this.maxGr = 0; this.maxKey = -120;
     }

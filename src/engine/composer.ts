@@ -211,14 +211,29 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       break;
     case 'ACID1': {
       const base = R + 12;
-      if (style.id === 'hypnotic' || style.id === 'mental_tribal') {
-        loop = 12; // 12-step polymetric analog 303 bass cycle against 16-step kick
-        const tones = [0, 0, 1, 0, 4, 1, 0, 3];
+      if (isHypnoticFamily) {
+        loop = rng.pick([12, 16, 20]);
+        // Generative 303 acid line contour using scale-aware degree pools and seed-driven syncopations
+        const degreePools = [
+          [0, 0, 1, 0, 4, 1, 0, 3],
+          [0, 1, 3, 0, 5, 1, 7, 0],
+          [0, 0, 2, 4, 0, 5, 2, 7],
+          [0, 1, 0, 3, 6, 1, 0, 4],
+        ];
+        const pool = rng.pick(degreePools);
+        const octChance = 0.25 + P.acid * 0.35;
+        let prevStep = -2;
         for (let s = 0; s < loop; s++) {
-          if (s % 4 === 0 && rng.chance(0.22)) continue;
-          const acc = s === 2 || s === 7 || s === 10;
-          const slide = s === 3 || s === 8;
-          add(s, slide ? 1.15 : 0.82, degree(base, P.scale, tones[s % tones.length]), acc ? 0.92 : 0.68, acc ? 0.08 : 0.32 + (s / loop) * 0.35, { acc, slide });
+          const offbeat = s % 2 === 1;
+          const prob = offbeat ? 0.78 : s % 4 === 0 ? 0.65 : 0.85;
+          if (rng.next() > prob) { prevStep = -2; continue; }
+          let deg = pool[s % pool.length];
+          let p = degree(base, P.scale, deg);
+          if ((s % 3 === 2 || s % 4 === 3) && rng.chance(octChance)) p += 12;
+          const acc = (s % 4 === 2 || s % 3 === 2 || rng.chance(0.28 + P.acid * 0.22));
+          const slide = prevStep === s - 1 && rng.chance(0.35 + P.acid * 0.35);
+          add(s, slide ? 1.18 : 0.82, p, acc ? 0.95 : 0.7, acc ? 0.06 : 0.32 + (s / loop) * 0.35, { acc, slide, micro: offbeat ? 0.018 : -0.012 });
+          prevStep = s;
         }
       } else {
         const a = acidLine(c, base, 16, 0.22 + P.acid * 0.28, 0.16 + P.acid * 0.22, 0.12, 0.2 - P.acid * 0.1);
@@ -228,19 +243,38 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       break;
     }
     case 'ACID2': {
-      loop = 32; const base = R + 12; const a = acidLine(c, base, 16, 0.4 + P.acid * 0.3, 0.3, 0.25, 0.35 - P.acid * 0.1);
+      loop = 32; const base = R + 12;
+      const a = acidLine(c, base, 16, 0.4 + P.acid * 0.3, 0.3, 0.25, 0.35 - P.acid * 0.1);
       const b = acidLine(c, base, 16, 0.5 + P.acid * 0.3, 0.35, 0.25, 0.3);
       N.push(...a, ...b.map((n) => ({ ...n, t: n.t + 16 })));
       break;
     }
     case 'STAB': {
-      if (style.id === 'hypnotic') {
-        loop = 16; // Relentless warm analog warehouse chord stab groove (low-mid chest register R+12)
-        const hits = [2, 5.5, 10, 13.5];
-        hits.forEach((h, hi) => {
-          const chord = chordPitches(c, R + 12, 0, [0, 2, 4]);
-          chord.forEach((p, k) => add(h, k === 0 ? 1.35 : 1.05, p, 0.68 + (hi % 2) * 0.16, hi * 0.12, { micro: hi % 2 === 1 ? 0.02 : 0 }));
-        });
+      if (isHypnoticFamily) {
+        loop = rng.pick([16, 32]);
+        const hitPatterns = [
+          [2, 5.5, 10, 13.5],
+          [1.5, 5, 9.5, 13],
+          [3, 7.5, 11, 14.5],
+          [2, 6, 10, 14],
+        ];
+        const hits = rng.pick(hitPatterns);
+        const voicings = [
+          [0, 2, 4],       // Triad
+          [0, 2, 4, 6],    // Minor 7th
+          [0, 1, 4, 6],    // Sus2/4 tension
+          [2, 4, 7],       // Inverted triad
+        ];
+        for (let half = 0; half < (loop / 16); half++) {
+          const rootDeg = style.prog[half % style.prog.length] ?? 0;
+          const voicing = rng.pick(voicings);
+          hits.forEach((h, hi) => {
+            const chord = chordPitches(c, R + 12, rootDeg, voicing);
+            chord.forEach((p, k) =>
+              add(half * 16 + h, k === 0 ? 1.35 : 1.05, p, 0.68 + (hi % 2) * 0.16, hi * 0.12, { micro: hi % 2 === 1 ? 0.02 : 0 })
+            );
+          });
+        }
       } else if (style.id === 'detroit') {
         loop = 32;
         const detroitHits = [0, 3, 6, 11, 14, 18, 22, 27, 30];
@@ -268,11 +302,16 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
     }
     case 'ARP': {
       if (isHypnoticFamily) {
-        loop = 12; // 12-step polymetric warm analog VCO sequence in dark low-mid register (R+12, zero high digital jumps)
-        const tones = [0, 0, 1, 4, 0, 1, 3, 4, 0, 1, 4, 1];
-        const base = R + 12;
+        loop = rng.pick([12, 16, 24]); // Polymetric warm analog VCO sequence
+        const tonePools = [
+          [0, 0, 1, 4, 0, 1, 3, 4],
+          [0, 2, 4, 7, 0, 2, 5, 7],
+          [0, 1, 3, 6, 0, 1, 4, 6],
+        ];
+        const tones = rng.pick(tonePools);
+        const base = R + 24; // Elevated crystalline pluck register
         for (let s = 0; s < loop; s++) {
-          const acc = s === 2 || s === 6 || s === 9;
+          const acc = s % 3 === 2 || s % 4 === 2;
           add(
             s,
             acc ? 0.9 : 0.7,
@@ -283,8 +322,8 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
           );
         }
       } else {
-        const tones = [0, 2, 4, 6, 7, 4, 2, 0];
-        const base = R + 12;
+        const tones = [0, 2, 4, 7, 9, 7, 4, 2];
+        const base = R + 24; // Upper register crystalline pluck band
         loop = 16;
         for (let s = 0; s < loop; s++) if (rng.chance(0.88)) add(s, 0.8, degree(base, P.scale, tones[s % tones.length]), 0.55 + (s % 3 === 0 ? 0.22 : 0), s % 3 === 0 ? 0.1 : rng.range(0.2, 0.95));
       }
@@ -301,9 +340,16 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
     case 'DUB': {
       loop = 24;
       if (isHypnoticFamily) {
-        const hits = [3, 11, 18];
+        const hitPatterns = [
+          [3, 11, 18],
+          [2, 10, 17],
+          [4, 12, 19],
+          [1.5, 9.5, 16.5],
+        ];
+        const hits = rng.pick(hitPatterns);
+        const rootDeg = style.prog[rng.int(0, style.prog.length - 1)] ?? 0;
         hits.forEach((h, hi) =>
-          chordPitches(c, R + 12, 0, [0, 2, 4, 6]).forEach((p, k) =>
+          chordPitches(c, R + 12, rootDeg, [0, 2, 4, 6]).forEach((p, k) =>
             add(h, 3.8, p, 0.76 - k * 0.04, hi * 0.14 + (k === 3 ? 0.1 : 0), { micro: 0.02 })
           )
         );

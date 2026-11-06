@@ -8,7 +8,8 @@ export { encodeWav } from './wavEncoding';
 import { assertProject } from './validation';
 import {expandTrackEvents,needsSidechainKey} from './musicalEvents';
 import { SC_WORKLET_SRC } from './worklet';
-import {renderOfflineWindows} from './offlineWindows';
+import { renderOfflineWindows } from './offlineWindows';
+import { settingsStore, playMetronomeClick } from './settings';
 
 const GROUPS: ScGroup[] = ['bass', 'harm', 'fx'];
 export const stepDurOf = (bpm: number) => 60 / bpm / 4;
@@ -119,13 +120,14 @@ export class Graph {
     const noise = cached.noise; const ir = cached.ir;
     const voiceRandom=new Rng(seed+2);
     this.env = { ctx, noise, random: ()=>voiceRandom.next(), sources:new Set(), dirt: 0.3, stepDur: 0.11, onStart: () => { this.voices++; }, onEnd: () => { this.voices = Math.max(0, this.voices - 1); } };
-    this.preMaster = ctx.createGain();
+    const settings = settingsStore.get();
+    this.preMaster = ctx.createGain(); this.preMaster.gain.value = 0.35;
     this.hp = ctx.createBiquadFilter(); this.hp.type = 'highpass'; this.hp.frequency.value = 20; this.hp.Q.value = 0.5;
-    this.sat = ctx.createWaveShaper(); this.sat.curve = satCurve(1.4); this.sat.oversample = '2x';
-    this.limiter = ctx.createDynamicsCompressor(); this.limiter.threshold.value = -4; this.limiter.knee.value = 0; this.limiter.ratio.value = 20; this.limiter.attack.value = 0.002; this.limiter.release.value = 0.12;
+    this.limiter = ctx.createDynamicsCompressor(); this.limiter.threshold.value = settings.limiterCeiling; this.limiter.knee.value = 3; this.limiter.ratio.value = 12; this.limiter.attack.value = 0.003; this.limiter.release.value = 0.10;
+    this.sat = ctx.createWaveShaper(); this.sat.curve = satCurve(0.8 + settings.analogWarmth * 1.2); this.sat.oversample = '2x';
     this.master = ctx.createGain(); this.master.gain.value = 0.85;
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.7;
-    this.preMaster.connect(this.hp); this.hp.connect(this.sat); this.sat.connect(this.limiter); this.limiter.connect(this.master); this.master.connect(this.analyser); this.analyser.connect(ctx.destination);
+    this.preMaster.connect(this.hp); this.hp.connect(this.limiter); this.limiter.connect(this.sat); this.sat.connect(this.master); this.master.connect(this.analyser); this.analyser.connect(ctx.destination);
 
     for (const g of GROUPS) {
       if (useWorklet) {
@@ -229,7 +231,13 @@ export class Graph {
     }
     const bpm = p.params.bpm; this.env.stepDur = stepDurOf(bpm); this.delay.delayTime.setTargetAtTime(60 / bpm * 0.75, now, 0.05);
     this.env.dirt = clamp(p.params.dirt + (p.params.mode === 'industrial' ? 0.25 : p.params.mode === 'clean' ? -0.15 : 0));
-    if (this.mode !== p.params.mode) { this.mode = p.params.mode; this.sat.curve = satCurve(p.params.mode === 'industrial' ? 2.4 : p.params.mode === 'clean' ? 0.8 : 1.4); }
+    const st = settingsStore.get();
+    this.limiter.threshold.setTargetAtTime(st.limiterCeiling, now, 0.02);
+    if (this.mode !== p.params.mode) {
+      this.mode = p.params.mode;
+      const k = (p.params.mode === 'industrial' ? 2.2 : p.params.mode === 'clean' ? 0.7 : 1.2) * (0.8 + st.analogWarmth * 0.8);
+      this.sat.curve = satCurve(k);
+    }
   }
 
   kill() {
@@ -340,12 +348,27 @@ export class Scheduler {
         playVoice(track.synth,this.g.env,strip.input,time,duration,event.note,strip.ctl,slideFrom);
       }
     }
-    if(!this.g.useWorklet&&p.scOn){
-      kickTimes.sort((a,b)=>a-b);
-      for(const group of GROUPS){
-        const duck=this.g.groups[group].duck;if(!duck)continue;const cfg=p.sc[group];
-        const depth=Math.min(0.92,(1-1/cfg.ratio)*1.05)*cfg.mix;
-        for(const time of kickTimes){duck.gain.setValueAtTime(1-depth,time);duck.gain.setTargetAtTime(1,time+0.004,cfg.rel/1000/3);}
+    if (!this.g.useWorklet && p.scOn) {
+      kickTimes.sort((a, b) => a - b);
+      for (const group of GROUPS) {
+        const duck = this.g.groups[group].duck; if (!duck) continue; const cfg = p.sc[group];
+        const depth = Math.min(0.92, (1 - 1 / cfg.ratio) * 1.05) * cfg.mix;
+        const atkSec = Math.max(0.002, (cfg.atk || 5) / 1000);
+        const relSec = Math.max(0.015, (cfg.rel || 100) / 1000);
+        for (const time of kickTimes) {
+          duck.gain.setTargetAtTime(1 - depth, time, atkSec / 3);
+          duck.gain.setTargetAtTime(1, time + atkSec, relSec / 3);
+        }
+      }
+    }
+    const settings = settingsStore.get();
+    if (settings.metronome && !chase) {
+      const stepStart = Math.ceil(a / 4) * 4;
+      const stepEnd = Math.min(b, endStep);
+      for (let st = stepStart; st < stepEnd; st += 4) {
+        if (st >= a) {
+          playMetronomeClick(this.g.ctx, mapT(st), st % 16 === 0, settings.metronomeVol);
+        }
       }
     }
   }
@@ -363,7 +386,7 @@ export function playbackRange(p:Project,fromBar:number){
 export class Engine {
   ctx?: AudioContext; graph: Graph | null = null; sched?: Scheduler; workletOk = false; workletTried = false;
   prewarmed = false;
-  playing = false; timer?: number; getProject: () => Project = () => { throw new Error('no project'); };
+  playing = false; timer?: number; private tickRaf?: number; private ticking = false; getProject: () => Project = () => { throw new Error('no project'); };
   private segs: { refStep: number; refTime: number; dur: number }[] = [];
   private nextStep = 0; private lastProject?: Project; private lastAuto?: unknown;
   private shared?: { noise: AudioBuffer; ir: AudioBuffer };
@@ -404,7 +427,8 @@ export class Engine {
   private async initialize() {
     if (!this.ctx) {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AC({ latencyHint: 'interactive' });
+      const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+      this.ctx = new AC({ latencyHint: isMobile ? 'balanced' : 'interactive' });
     }
     const resume=this.ctx.state!=='running'?this.ctx.resume():Promise.resolve();
     await resume;
@@ -475,12 +499,21 @@ export class Engine {
     this.segs = [{ refStep: step, refTime: t0, dur }]; this.nextStep = step; this.chaseNextWindow=true; this.playing = true;
     try{
       this.sched!.scheduleAutomation(p, range.start, t0, true);
-      this.timer = window.setInterval(() => {try{this.tick();}catch(error){this.stop();this.onError?.(error instanceof Error?error:new Error(String(error)));}}, 25); this.tick();
+      const loop = () => {
+        if (!this.playing) return;
+        try { this.tick(); } catch (error) { this.stop(); this.onError?.(error instanceof Error ? error : new Error(String(error))); }
+        if (this.playing) this.tickRaf = requestAnimationFrame(loop);
+      };
+      this.tickRaf = requestAnimationFrame(loop);
+      this.timer = window.setInterval(() => {try{this.tick();}catch(error){this.stop();this.onError?.(error instanceof Error?error:new Error(String(error)));}}, 20);
+      this.tick();
     }catch(error){this.stop();throw error;}
   }
 
   private halt() {
-    if (this.timer) clearInterval(this.timer); this.timer = undefined; this.playing = false;
+    if (this.timer) clearInterval(this.timer); this.timer = undefined;
+    if (this.tickRaf) cancelAnimationFrame(this.tickRaf); this.tickRaf = undefined;
+    this.playing = false;
     if (this.graph) { this.graph.kill(); this.graph = null; this.sched = undefined; }
     if (this.ctx && this.workletOk && !this.prewarmedNodes) {
       this.prewarmedNodes = Graph.prewarmWorkletNodes(this.ctx, true);
@@ -498,37 +531,65 @@ export class Engine {
   }
 
   private tick() {
-    const ctx = this.ctx!; const g = this.graph; if (!g || !this.sched) return;
-    if(g.failure)throw new Error(g.failure);
-    const t0 = performance.now(); const p = this.getProject();
-    if (p !== this.lastProject) {
-      if(p.params.seed!==g.seed){void this.play(Math.max(0,this.getStep()/16)).catch(e=>{this.stop();this.onError?.(e instanceof Error?e:new Error(String(e)));});return;}
-      g.sync(p); this.lastProject = p;
-      const seg0 = this.segs[this.segs.length - 1]; const dur = stepDurOf(p.params.bpm);
-      if (Math.abs(seg0.dur - dur) > 1e-9) { // tempo change: new segment from here
-        const tn = seg0.refTime + (this.nextStep - seg0.refStep) * seg0.dur;
-        this.segs.push({ refStep: this.nextStep, refTime: Math.max(tn, ctx.currentTime), dur });
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const ctx = this.ctx!; const g = this.graph; if (!g || !this.sched) return;
+      if (g.failure) throw new Error(g.failure);
+      const t0 = performance.now(); const p = this.getProject();
+      if (p !== this.lastProject) {
+        if (p.params.seed !== g.seed) {
+          void this.play(Math.max(0, this.getStep() / 16)).catch((e) => {
+            this.stop();
+            this.onError?.(e instanceof Error ? e : new Error(String(e)));
+          });
+          return;
+        }
+        g.sync(p);
+        this.lastProject = p;
+        const seg0 = this.segs[this.segs.length - 1]; const dur = stepDurOf(p.params.bpm);
+        if (Math.abs(seg0.dur - dur) > 1e-9) {
+          const tn = seg0.refTime + (this.nextStep - seg0.refStep) * seg0.dur;
+          this.segs.push({ refStep: this.nextStep, refTime: Math.max(tn, ctx.currentTime), dur });
+        }
+        if (p.auto !== this.lastAuto || Math.abs(seg0.dur - dur) > 1e-9) {
+          this.lastAuto = p.auto; const sg = this.segs[this.segs.length - 1];
+          const nowStep = sg.refStep + Math.max(0, ctx.currentTime + 0.02 - sg.refTime) / sg.dur;
+          this.sched.scheduleAutomation(p, nowStep / STEPS_PER_BAR, ctx.currentTime + 0.02, true);
+        }
       }
-      if (p.auto !== this.lastAuto || Math.abs(seg0.dur-dur)>1e-9) {
-        this.lastAuto = p.auto; const sg = this.segs[this.segs.length - 1];
-        const nowStep = sg.refStep + Math.max(0, ctx.currentTime + 0.02 - sg.refTime) / sg.dur;
-        this.sched.scheduleAutomation(p, nowStep / STEPS_PER_BAR, ctx.currentTime + 0.02, true);
+      const seg = this.segs[this.segs.length - 1]; const end = totalBars(p) * STEPS_PER_BAR;
+      const clockStep = seg.refStep + (ctx.currentTime - seg.refTime) / seg.dur;
+      if (this.nextStep < clockStep - 0.5) {
+        this.nextStep = Math.max(0, clockStep);
+        this.chaseNextWindow = true;
+        this.sched.scheduleAutomation(p, this.nextStep / 16, ctx.currentTime, true);
       }
+      const horizon = ctx.currentTime + 0.45;
+      const limit = seg.refStep + (horizon - seg.refTime) / seg.dur;
+      const range = playbackRange(p, this.nextStep / STEPS_PER_BAR);
+      const loopEnd = range.loopEnd * STEPS_PER_BAR;
+      const stop = Math.min(limit, loopEnd, end);
+      if (stop > this.nextStep) {
+        const winStart = this.nextStep;
+        this.nextStep = stop;
+        this.sched.scheduleWindow(p, winStart, stop, (s) => seg.refTime + (s - seg.refStep) * seg.dur, this.chaseNextWindow, Math.min(end, loopEnd));
+        this.chaseNextWindow = false;
+      }
+      if (loopEnd !== Infinity && this.nextStep >= loopEnd - 1e-9) {
+        const tw = Math.max(ctx.currentTime, seg.refTime + (loopEnd - seg.refStep) * seg.dur);
+        const ls = range.loopStart * STEPS_PER_BAR;
+        this.segs.push({ refStep: ls, refTime: tw, dur: seg.dur });
+        this.nextStep = ls;
+        this.chaseNextWindow = true;
+        this.sched.scheduleAutomation(p, range.loopStart, tw, true);
+      } else if (this.nextStep >= end - 1e-9 && ctx.currentTime > seg.refTime + (end - seg.refStep) * seg.dur + 3.5) {
+        this.stop();
+      }
+      this.schedMs = this.schedMs * 0.9 + (performance.now() - t0) * 0.1;
+    } finally {
+      this.ticking = false;
     }
-    const seg = this.segs[this.segs.length - 1]; const end = totalBars(p) * STEPS_PER_BAR;
-    const clockStep=seg.refStep+(ctx.currentTime-seg.refTime)/seg.dur;
-    if(this.nextStep<clockStep-0.5){this.nextStep=Math.max(0,clockStep);this.chaseNextWindow=true;this.sched.scheduleAutomation(p,this.nextStep/16,ctx.currentTime,true);}
-    const horizon = ctx.currentTime + 0.3; const limit = seg.refStep + (horizon - seg.refTime) / seg.dur;
-    const range=playbackRange(p,this.nextStep/STEPS_PER_BAR);
-    const loopEnd = range.loopEnd * STEPS_PER_BAR;
-    const stop = Math.min(limit, loopEnd, end);
-    if (stop > this.nextStep) { this.sched.scheduleWindow(p, this.nextStep, stop, (s) => seg.refTime + (s - seg.refStep) * seg.dur,this.chaseNextWindow,Math.min(end,loopEnd)); this.chaseNextWindow=false; this.nextStep = stop; }
-    if (loopEnd !== Infinity && this.nextStep >= loopEnd - 1e-9) {
-      const tw = Math.max(ctx.currentTime,seg.refTime + (loopEnd - seg.refStep) * seg.dur); const ls = range.loopStart * STEPS_PER_BAR;
-      this.segs.push({ refStep: ls, refTime: tw, dur: seg.dur }); this.nextStep = ls;this.chaseNextWindow=true;
-      this.sched.scheduleAutomation(p, range.loopStart, tw, true);
-    } else if (this.nextStep >= end - 1e-9 && ctx.currentTime > seg.refTime + (end - seg.refStep) * seg.dur + 3.5) this.stop();
-    this.schedMs = this.schedMs * 0.9 + (performance.now() - t0) * 0.1;
   }
 }
 

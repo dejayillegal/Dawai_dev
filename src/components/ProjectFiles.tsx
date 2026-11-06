@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { DurableLoad } from '../engine/durablePersistence';
 import type { Project } from '../engine/types';
 import { decodeSnapshot, encodeSnapshot } from '../engine/persistence';
+import { importAlsFile } from '../engine/alsImport';
 import { downloadProjectMidi } from '../engine/midiExport';
 import { store, useApp } from '../store';
 import { seek, toggleLoop } from '../actions';
 import { Btn } from '../ui';
 
 /** Explicit file ownership complements autosave; import never overwrites on file selection. */
-export function ProjectFiles({ compact }: { compact: boolean }) {
+export function ProjectFiles({ compact, onOpenSettings }: { compact: boolean; onOpenSettings?: () => void }) {
   const app = useApp();
   const input = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -127,6 +128,17 @@ export function ProjectFiles({ compact }: { compact: boolean }) {
                 >
                   Save Autosave Now
                 </Btn>
+                {onOpenSettings && (
+                  <Btn
+                    onClick={() => {
+                      setOpen(false);
+                      onOpenSettings();
+                    }}
+                    title="Configure audio engine, DSP latency, UI themes, and shortcuts"
+                  >
+                    ⚙ Settings &amp; Audio Preferences…
+                  </Btn>
+                )}
               </div>
 
               {/* Export Options */}
@@ -215,16 +227,21 @@ export function ProjectFiles({ compact }: { compact: boolean }) {
       <input
         ref={input}
         type="file"
-        accept=".json,.aidaw.json,application/json"
+        accept=".json,.aidaw.json,.als,application/json,application/x-gzip"
         className="hidden"
-        aria-label="Open AIDAW project"
+        aria-label="Open AIDAW or Ableton Live ALS project"
         onChange={async (event) => {
           const file = event.target.files?.[0];
           event.target.value = '';
           if (!file) return;
           try {
             if (file.size > 32 * 1024 * 1024) throw new Error('Project exceeds 32 MiB import limit');
-            setPending({ project: decodeSnapshot(await file.text()) });
+            if (file.name.toLowerCase().endsWith('.als')) {
+              const imported = await importAlsFile(await file.arrayBuffer(), file.name);
+              setPending({ project: imported });
+            } else {
+              setPending({ project: decodeSnapshot(await file.text()) });
+            }
           } catch (error) {
             store.reportError(error);
           }

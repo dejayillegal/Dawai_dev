@@ -30,8 +30,8 @@ This document records the implemented recovery, DAW capabilities, and verified r
 
 - **Unit & Integration Suite (`npm run check`)**:
   - `tsc --noEmit`: PASS (0 errors).
-  - `vitest run`: PASS — **136 tests across 20 test files** (`tests/arrangement.test.ts`, `tests/core.test.ts`, `tests/durablePersistence.test.ts`, `tests/durableStore.test.ts`, `tests/eventScheduling.test.ts`, `tests/exportPipeline.test.ts`, `tests/graphRouting.test.ts`, `tests/integrity.test.ts`, `tests/midiExport.test.ts`, `tests/musicalEvents.test.ts`, `tests/persistence.test.ts`, `tests/scheduler.test.ts`, `tests/sidechain.test.ts`, `tests/store.test.ts`, `tests/timelineInteraction.test.ts`, `tests/transport.test.ts`, `tests/voices.test.ts`, `tests/wav.test.ts`, `tests/wavTasks.test.ts`, `tests/alsExport.test.ts`).
-  - `vite build`: PASS — single-file production bundle (`dist/index.html`, `807.33 kB` / `226.89 kB` gzip).
+  - `vitest run`: PASS — **138 tests across 21 test files** (`tests/arrangement.test.ts`, `tests/core.test.ts`, `tests/durablePersistence.test.ts`, `tests/durableStore.test.ts`, `tests/eventScheduling.test.ts`, `tests/exportPipeline.test.ts`, `tests/graphRouting.test.ts`, `tests/integrity.test.ts`, `tests/midiExport.test.ts`, `tests/musicalEvents.test.ts`, `tests/persistence.test.ts`, `tests/scheduler.test.ts`, `tests/settings.test.ts`, `tests/sidechain.test.ts`, `tests/store.test.ts`, `tests/timelineInteraction.test.ts`, `tests/transport.test.ts`, `tests/voices.test.ts`, `tests/wav.test.ts`, `tests/wavTasks.test.ts`, `tests/alsExport.test.ts`).
+  - `vite build`: PASS — single-file production bundle (`dist/index.html`, `859.72 kB` / `234.56 kB` gzip).
   - Toolchain: Node `v24.22.1`, npm `11.9.0`, Vite `7.3.7`, Vitest `5.1.0`.
 
 ## Gate ledger

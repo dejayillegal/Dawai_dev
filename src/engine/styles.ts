@@ -143,6 +143,20 @@ export const STYLES: Record<string, StyleDef> = {
     forms: ['plateau', 'hardgroove', 'peakfirst'], swing: 0.57, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [12, 18, 20, 24], prog: [0, 1, 0, 2], dirt: 0.38,
     thr: { CONGA: [0.2, 0.55], TOM: [0.3, 0.65], PERC2: [0.3, 0.65], ARP: [0.4, 0.75] },
   },
+  cinematic_dark: {
+    id: 'cinematic_dark', name: 'Cinematic Dark Score', desc: '118–128 BPM · tension drone swells, dark minor/locrian atmospheres, bowed sub-bass, cavernous textured impact score.',
+    bpm: [118, 128], scales: ['phrygianDominant', 'locrian', 'harmonicMinor', 'minor'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'HAT_C', 'HAT_O', 'SHAKER', 'PERC1', 'CLANG', 'DRONE', 'PAD', 'DUB', 'ARP', 'TEX', 'CRACKLE', ...ATOMS],
+    forms: ['dub', 'plateau', 'tool'], swing: 0.54, cut16: 0.5, cut32: 1, void: 2, kick: 'ghost', poly: [16, 24, 32], prog: [0, 1, 0, 5], dirt: 0.45,
+    thr: { DRONE: [0.1, 0.45], PAD: [0.15, 0.5], RUMBLE: [0.1, 0.4], CLANG: [0.35, 0.7] },
+  },
+  horror_vault: {
+    id: 'horror_vault', name: 'Horror Warehouse Vault', desc: '130–138 BPM · subterranean vault rumbles, screeching locrian 303 acid, dissonant stabs & dark industrial anvil strikes.',
+    bpm: [130, 138], scales: ['locrian', 'phrygian', 'octatonic'],
+    layers: ['KICK', 'SUB', 'RUMBLE', 'MIDBASS', 'HAT_C', 'HAT_O', 'CLAP', 'PERC1', 'PERC2', 'CLANG', 'TOM', 'ACID1', 'ACID2', 'STAB', 'DRONE', 'TEX', ...ATOMS],
+    forms: ['industrial', 'acid', 'peakfirst'], swing: 0.52, cut16: 1, cut32: 2, void: 2, kick: 'stark', poly: [12, 20, 28], prog: [0, 1, 0, 0], dirt: 0.78,
+    thr: { ACID2: [0.6, 0.95], CLANG: [0.4, 0.8], RUMBLE: [0.15, 0.5] },
+  },
 };
 
 export interface SectionSpec { role: SectionRole; bars: number[]; energy: number; flex?: boolean; p?: number; name?: string }

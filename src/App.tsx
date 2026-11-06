@@ -285,9 +285,20 @@ export default function App() {
   );
 
   const errorBanner = app.error && (
-    <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-red-500 bg-panel p-2 text-red-300">
-      <span className="min-w-0 flex-1">{app.error}</span>
-      <Btn onClick={() => store.clearError()}>Dismiss</Btn>
+    <div role="alert" className="flex shrink-0 items-center flex-wrap gap-2 border-b border-amber/60 bg-amber/10 p-2 text-xs text-amber-200">
+      <span className="min-w-0 flex-1 font-medium">{app.error}</span>
+      {app.databaseRecovery ? (
+        <>
+          <Btn small tone="amber" onClick={() => void store.keepCurrentRecovery()} title="Keep current local workspace and overwrite database save">
+            Keep Local Edits
+          </Btn>
+          <Btn small tone="cyan" onClick={() => void store.restoreDurable(app.databaseRecovery!)} title="Restore saved database project into workspace">
+            Load Saved Database
+          </Btn>
+        </>
+      ) : (
+        <Btn small onClick={() => store.clearError()}>Dismiss</Btn>
+      )}
     </div>
   );
   const banner = app.restored && (

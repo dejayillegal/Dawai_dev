@@ -25,7 +25,54 @@ export function Compose() {
           ))}
         </div>
         <p className="mt-2 text-[10px] leading-snug text-slate-400">{style.desc}</p>
-        <label className="mt-2 block text-[10px] uppercase tracking-wider text-slate-400">Song-form archetype
+        <div className="mt-2.5">
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Atmospheric Mood &amp; Sound Flavor
+          </label>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {[
+              ['default', 'Standard Subgenre', 'Original style voicing'],
+              ['horror', 'Horror Vault', 'Locrian scale, vault rumbles, dark anvil strikes'],
+              ['cinematic', 'Cinematic Tension', 'Harmonic minor drones, bowed sub-bass, dub swells'],
+              ['hypnotic', 'Hypnotic Warehouse', 'Rolling polyrhythms, 303 acid, deep vault sub'],
+            ].map(([mKey, label, desc]) => {
+              const active =
+                (mKey === 'horror' && P.scale === 'locrian') ||
+                (mKey === 'cinematic' && P.scale === 'harmonicMinor') ||
+                (mKey === 'hypnotic' && P.scale === 'phrygian') ||
+                (mKey === 'default' && P.scale === style.scales[0]);
+              return (
+                <button
+                  key={mKey}
+                  type="button"
+                  onClick={() => {
+                    let patch: Partial<ComposeParams> = {};
+                    if (mKey === 'horror') {
+                      patch = { scale: 'locrian', dirt: 0.75, acid: 0.8, poly: 0.65, mode: 'industrial' };
+                    } else if (mKey === 'cinematic') {
+                      patch = { scale: 'harmonicMinor', depth: 0.85, acid: 0.3, poly: 0.5, mode: 'hybrid' };
+                    } else if (mKey === 'hypnotic') {
+                      patch = { scale: 'phrygian', depth: 0.65, acid: 0.65, poly: 0.75, mode: 'hybrid' };
+                    } else {
+                      patch = { scale: style.scales[0], dirt: style.dirt, mode: 'hybrid' };
+                    }
+                    set(patch, 'mood');
+                  }}
+                  className={cn(
+                    'rounded border p-1.5 text-left transition-colors',
+                    active
+                      ? 'border-amber bg-amber/15 text-amber font-semibold'
+                      : 'border-line bg-elev text-slate-300 hover:border-slate-500'
+                  )}
+                >
+                  <div className="text-[10px] font-semibold">{label}</div>
+                  <div className="mt-0.5 text-[8.5px] leading-tight text-slate-400">{desc}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <label className="mt-2.5 block text-[10px] uppercase tracking-wider text-slate-400">Song-form archetype
           <select value={P.form} onChange={(e) => set({ form: e.target.value }, 'form')} className="mt-0.5 w-full text-[11px] normal-case tracking-normal">
             <option value="auto">Auto — pick by style + seed</option>
             {Object.values(FORMS).map((f) => <option key={f.id} value={f.id}>{f.name} ({f.range})</option>)}
