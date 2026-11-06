@@ -75,16 +75,28 @@ export function TopBar({ onExport, compact }: { onExport: () => void; compact: b
   const canUndo = app.cursor > 0;
   const canRedo = app.cursor < app.entries.length;
 
+  const [aboutOpen, setAboutOpen] = useState(false);
+
   return (
     <>
       <header className="relative z-50 flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2 select-none">
         <ProjectFiles compact={compact} onOpenSettings={() => setSettingsOpen(true)} />
-        <div className={cn('items-center gap-1.5 pr-1', compact ? 'hidden sm:flex' : 'flex')}>
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-amber font-black text-black text-[11px]">Ai</div>
+        <div
+          className={cn('items-center gap-2 pr-1 cursor-pointer group', compact ? 'hidden sm:flex' : 'flex')}
+          onClick={() => setAboutOpen(true)}
+          title="About AIDAW · View App Details & Advanced Icon"
+        >
+          <img
+            src="/icon.svg"
+            alt="AIDAW App Icon"
+            className="h-7 w-7 rounded-lg shadow-[0_0_10px_rgba(245,158,11,0.35)] ring-1 ring-amber/40 transition-transform group-hover:scale-105 group-hover:shadow-[0_0_14px_rgba(6,182,212,0.5)]"
+          />
           {!compact && (
             <div className="leading-tight">
-              <div className="text-[11px] font-bold tracking-wide text-slate-100">AIDAW</div>
-              <div className="max-w-[120px] truncate text-[8.5px] text-slate-400 font-medium" title={p.name}>
+              <div className="text-[11px] font-bold tracking-wider text-slate-100 group-hover:text-amber transition-colors">
+                AIDAW
+              </div>
+              <div className="max-w-[120px] truncate text-[8.5px] font-medium text-slate-400" title={p.name}>
                 {p.name}
               </div>
             </div>
@@ -320,6 +332,60 @@ export function TopBar({ onExport, compact }: { onExport: () => void; compact: b
         </div>
       </header>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {aboutOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-xl border border-line bg-[#0f1318] p-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/icon.svg"
+                  alt="AIDAW Advanced App Icon"
+                  className="h-14 w-14 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.4)] ring-2 ring-amber/50"
+                />
+                <div>
+                  <h2 className="text-base font-bold tracking-wider text-slate-100">AIDAW</h2>
+                  <p className="text-[11px] font-medium text-amber">AI-Native Underground Techno DAW</p>
+                  <p className="text-[9.5px] text-slate-400">PWA &amp; Native Mobile Ready · v1.0.0</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAboutOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-elev hover:text-white transition-colors text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-4 space-y-3 text-xs leading-relaxed text-slate-300">
+              <div className="rounded-lg border border-line bg-elev/50 p-3">
+                <div className="text-[10.5px] font-semibold uppercase tracking-wider text-cyan mb-1">
+                  Advanced App Identity &amp; PWA Suite
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
+                  <li>Obsidian dark glass 3D rotary encoder icon geometry</li>
+                  <li>Multi-resolution PWA icons (192px, 512px, Maskable)</li>
+                  <li>iOS Apple Touch Icon &amp; Crisp Vector SVG Browser Favicon</li>
+                  <li>Capacitor Android native asset bundle pre-packaged</li>
+                </ul>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="rounded border border-line bg-[#151a22] p-2">
+                  <span className="block font-semibold text-slate-200">Synthesis Engine</span>
+                  <span className="text-slate-400">TB-303, Sub Boom, Pluck, FM Lead</span>
+                </div>
+                <div className="rounded border border-line bg-[#151a22] p-2">
+                  <span className="block font-semibold text-slate-200">Sidechain DSP</span>
+                  <span className="text-slate-400">AudioWorklet 42Hz IPC Metering</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <Btn tone="amber" className="px-4" onClick={() => setAboutOpen(false)}>
+                Close
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

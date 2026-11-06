@@ -3,7 +3,7 @@ import { FORMS, LAYERS, ROLE_COLORS, STYLES } from '../engine/styles';
 import { KEY_NAMES, SCALE_NAMES } from '../engine/theory';
 import type { ComposeParams, ProdMode, ScaleId } from '../engine/types';
 import { composeGenerate, regenerateSectionNow, setLayerLevel } from '../actions';
-import { Btn, Section, Slider } from '../ui';
+import { Btn, RotaryKnob, Section } from '../ui';
 import { cn } from '../utils/cn';
 
 export function Compose() {
@@ -86,16 +86,16 @@ export function Compose() {
           <label className="text-[10px] uppercase text-slate-400">Key<select value={P.key} onChange={(e) => set({ key: +e.target.value }, 'key')} className="mt-0.5 w-full text-[11px]">{KEY_NAMES.map((k, i) => <option key={k} value={i}>{k}</option>)}</select></label>
           <label className="col-span-2 text-[10px] uppercase text-slate-400">Scale / mode<select value={P.scale} onChange={(e) => set({ scale: e.target.value as ScaleId }, 'scale')} className="mt-0.5 w-full text-[11px]">{Object.entries(SCALE_NAMES).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
         </div>
-        <div className="mt-2 space-y-1.5">
-          <Slider label="Tempo" value={P.bpm} min={110} max={155} step={1} onChange={(v) => set({ bpm: v }, 'bpm')} fmt={(v) => `${v} BPM`} />
-          <Slider label="Target length" value={P.bars} min={96} max={256} step={8} onChange={(v) => set({ bars: v }, 'bars')} fmt={(v) => `${v} bars · ${(v * 4 * 60 / P.bpm / 60).toFixed(1)} min`} />
-          <Slider label="Arrangement density" value={P.density} min={0} max={1} onChange={(v) => set({ density: v }, 'density')} />
-          <Slider label="Rhythmic complexity" value={P.complexity} min={0} max={1} onChange={(v) => set({ complexity: v }, 'cx')} />
-          <Slider label="Swing / shuffle" value={P.swing} min={0.5} max={0.68} step={0.005} onChange={(v) => set({ swing: v }, 'swing')} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
-          <Slider label="Acid intensity" value={P.acid} min={0} max={1} onChange={(v) => set({ acid: v }, 'acid')} />
-          <Slider label="Percussion polyrhythm" value={P.poly} min={0} max={1} onChange={(v) => set({ poly: v }, 'poly')} />
-          <Slider label="Industrial / saturation dirt" value={P.dirt} min={0} max={1} onChange={(v) => set({ dirt: v }, 'dirt')} />
-          <Slider label="Atmosphere / dub depth" value={P.depth} min={0} max={1} onChange={(v) => set({ depth: v }, 'depth')} />
+        <div className="mt-2.5 grid grid-cols-3 gap-y-3 gap-x-1.5 rounded-lg border border-line bg-[#0e1217] p-2.5 shadow-inner">
+          <RotaryKnob label="Tempo" value={P.bpm} min={110} max={155} step={1} onChange={(v) => set({ bpm: v }, 'bpm')} fmt={(v) => `${v} BPM`} size={42} color="#f59e0b" hint="BPM Tempo (110–155)" />
+          <RotaryKnob label="Target Bars" value={P.bars} min={96} max={256} step={8} onChange={(v) => set({ bars: v }, 'bars')} fmt={(v) => `${v}b`} size={42} color="#f59e0b" hint="Arrangement target length (bars)" />
+          <RotaryKnob label="Swing" value={P.swing} min={0.5} max={0.68} step={0.005} onChange={(v) => set({ swing: v }, 'swing')} fmt={(v) => `${(v * 100).toFixed(1)}%`} size={42} color="#f59e0b" hint="Rhythmic shuffle / swing amount" />
+          <RotaryKnob label="Density" value={P.density} min={0} max={1} step={0.01} onChange={(v) => set({ density: v }, 'density')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#f59e0b" hint="Arrangement note density" />
+          <RotaryKnob label="Complexity" value={P.complexity} min={0} max={1} step={0.01} onChange={(v) => set({ complexity: v }, 'cx')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#f59e0b" hint="Rhythmic complexity & syncopation" />
+          <RotaryKnob label="Acid" value={P.acid} min={0} max={1} step={0.01} onChange={(v) => set({ acid: v }, 'acid')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#06b6d4" hint="303 Acid resonance & slide frequency" />
+          <RotaryKnob label="Polyrhythm" value={P.poly} min={0} max={1} step={0.01} onChange={(v) => set({ poly: v }, 'poly')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#06b6d4" hint="Percussion polyrhythmic offset" />
+          <RotaryKnob label="Dirt" value={P.dirt} min={0} max={1} step={0.01} onChange={(v) => set({ dirt: v }, 'dirt')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#f43f5e" hint="Industrial saturation & distortion" />
+          <RotaryKnob label="Dub Depth" value={P.depth} min={0} max={1} step={0.01} onChange={(v) => set({ depth: v }, 'depth')} fmt={(v) => `${Math.round(v * 100)}%`} size={42} color="#3b82f6" hint="Atmospheric reverb & dub delay depth" />
         </div>
         <div className="mt-2 flex gap-1" role="group" aria-label="Production mode">
           {(['clean', 'hybrid', 'industrial'] as ProdMode[]).map((m) => <Btn key={m} small className="flex-1 capitalize" active={P.mode === m} onClick={() => set({ mode: m }, 'mode')}>{m}</Btn>)}
