@@ -1,4 +1,4 @@
-import type { Project } from './types';
+import type { Clip, Project, Track } from './types';
 import { totalBars, STEPS_PER_BAR } from './types';
 import { expandTrackEvents } from './musicalEvents';
 import { clamp } from './theory';
@@ -184,3 +184,45 @@ export function exportProjectToMidi(project: Project, targetTrackId?: string): B
 
   return new Blob([out], { type: 'audio/midi' });
 }
+
+export function exportClipToMidi(project: Project, track: Track, clip: Clip): Blob {
+  const trackBuffers: Uint8Array[] = [];
+  trackBuffers.push(buildConductorTrack(project));
+
+  const drumSynths = new Set(['kick', 'hat', 'ohat', 'ride', 'shaker', 'clap', 'snare', 'perc', 'conga', 'tom']);
+  const ch = drumSynths.has(track.synth) ? 9 : 0;
+
+  const timelineEvents: MidiTimelineEvent[] = [];
+  for (const n of clip.notes) {
+    if (n.v <= 0) continue;
+    const onTick = Math.round(n.t * TICKS_PER_STEP);
+    const offTick = Math.max(onTick + 1, Math.round((n.t + n.d * 0.98) * TICKS_PER_STEP));
+    const vel = clamp(Math.round(n.v * clip.gain * 127), 1, 127);
+    const pitch = clamp(Math.round(n.p + clip.transpose), 0, 127);
+
+    timelineEvents.push({ tick: onTick, type: 'on', note: pitch, velocity: vel, channel: ch });
+    timelineEvents.push({ tick: offTick, type: 'off', note: pitch, velocity: 0, channel: ch });
+  }
+
+  trackBuffers.push(buildMidiTrack(`${track.name} - ${clip.label}`, timelineEvents));
+
+  const header: number[] = [];
+  header.push(0x4d, 0x54, 0x68, 0x64);
+  header.push(...writeInt32(6));
+  header.push(...writeInt16(1));
+  header.push(...writeInt16(trackBuffers.length));
+  header.push(...writeInt16(TICKS_PER_BEAT));
+
+  const totalLength = header.length + trackBuffers.reduce((acc, b) => acc + b.length, 0);
+  const out = new Uint8Array(totalLength);
+  out.set(new Uint8Array(header), 0);
+
+  let offset = header.length;
+  for (const tb of trackBuffers) {
+    out.set(tb, offset);
+    offset += tb.length;
+  }
+
+  return new Blob([out], { type: 'audio/midi' });
+}
+

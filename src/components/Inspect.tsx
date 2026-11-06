@@ -8,6 +8,7 @@ import { Btn, Section, Slider, Badge } from '../ui';
 import { SidechainPanel } from './Sidechain';
 import { actRegenSection } from '../engine/assist';
 import { totalBars } from '../engine/types';
+import { exportClipToMidi } from '../engine/midiExport';
 
 function MasterDevice() {
   const app = useApp(); const p = app.project; const cv = useRef<HTMLCanvasElement>(null);
@@ -156,6 +157,22 @@ export function Inspect() {
             <Btn small active={c.mute} onClick={() => up({ mute: !c.mute }, 'mute')}>Mute clip</Btn>
             <Btn small onClick={splitSelectedAtPlayhead} title="Ctrl/Cmd+E">Split @ playhead</Btn>
             <Btn small onClick={() => store.dispatch({ type: 'DUP_CLIP', copyId: uid('clip'), id: c.id }, 'Duplicate clip')} title="Ctrl/Cmd+D">Duplicate</Btn>
+            <Btn
+              small
+              tone="cyan"
+              onClick={() => {
+                const blob = exportClipToMidi(p, t, c);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${p.name.replace(/[^\w.-]+/g, '_')}_${t.name.replace(/[^\w.-]+/g, '_')}_${c.label.replace(/[^\w.-]+/g, '_')}.mid`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              title="Export this clip as a .mid file"
+            >
+              Export MIDI
+            </Btn>
             <Btn small tone="red" onClick={() => { store.dispatch({ type: 'DEL_CLIP', id: c.id }, 'Delete clip'); store.select({ kind: 'track', id: t.id }); }} title="Delete">Delete</Btn>
           </div>
           <div className="mt-2 text-[10px] text-slate-500">{c.notes.length} notes · open the Piano Roll tab to edit notes, accents and slides.</div>

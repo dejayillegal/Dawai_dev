@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exportProjectToMidi, TICKS_PER_BEAT } from '../src/engine/midiExport';
+import { exportProjectToMidi, exportClipToMidi, TICKS_PER_BEAT } from '../src/engine/midiExport';
 import { newProject, defaultParams } from '../src/engine/composer';
 
 describe('MIDI Export Engine', () => {
@@ -49,6 +49,24 @@ describe('MIDI Export Engine', () => {
 
     const numTracks = (bytes[10] << 8) | bytes[11];
     // 1 conductor + 1 targeted track = 2 tracks
+    expect(numTracks).toBe(2);
+  });
+
+  it('exports a single clip as standard MIDI with notes', async () => {
+    const p = newProject(defaultParams('acid', 777));
+    const targetTrack = p.tracks.find((t) => t.clips.some((c) => c.notes.length > 0));
+    expect(targetTrack).toBeDefined();
+    const clip = targetTrack!.clips.find((c) => c.notes.length > 0)!;
+
+    const blob = exportClipToMidi(p, targetTrack!, clip);
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('audio/midi');
+
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const headerTag = String.fromCharCode(...bytes.slice(0, 4));
+    expect(headerTag).toBe('MThd');
+    const numTracks = (bytes[10] << 8) | bytes[11];
     expect(numTracks).toBe(2);
   });
 });

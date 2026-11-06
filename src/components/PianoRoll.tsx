@@ -5,6 +5,7 @@ import { SCALES, euclid, Rng, KEY_NAMES } from '../engine/theory';
 import { mutate } from '../engine/composer';
 import { Btn } from '../ui';
 import { cn } from '../utils/cn';
+import { exportClipToMidi } from '../engine/midiExport';
 
 const GUT = 38, RH = 12, VEL_H = 54;
 const SINGLE = ['kick', 'hat', 'ohat', 'ride', 'shaker', 'clap', 'snare', 'clang', 'crackle', 'riser', 'impact', 'downlift', 'crash'];
@@ -123,6 +124,22 @@ export function PianoRoll() {
         <Btn small onClick={() => commit(notes.map((n) => ({ ...n, t: Math.round(n.t), micro: 0 })), 'Quantize')}>Quantize</Btn>
         <Btn small onClick={() => { const r = new Rng(Date.now()); commit(notes.map((n) => ({ ...n, micro: +(r.range(-0.1, 0.1)).toFixed(3), v: Math.min(1, Math.max(0.1, n.v + r.range(-0.12, 0.08))) })), 'Humanize'); }}>Humanize</Btn>
         <Btn small onClick={() => commit(mutate(notes, c.loop, new Rng(Date.now()).pick(['oct', 'rot', 'acc', 'rest'] as const), new Rng(Date.now() + 1)), 'Mutate clip')}>Mutate</Btn>
+        <Btn
+          small
+          tone="cyan"
+          title="Export this clip as a standard .mid file"
+          onClick={() => {
+            const blob = exportClipToMidi(p, t, c);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${p.name.replace(/[^\w.-]+/g, '_')}_${t.name.replace(/[^\w.-]+/g, '_')}_${c.label.replace(/[^\w.-]+/g, '_')}.mid`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export MIDI
+        </Btn>
         <Btn small tone="ghost" onClick={() => commit([], 'Clear notes')}>Clear</Btn>
         <span className="ml-auto font-mono text-[10px] text-slate-500">{notes.length} notes · {KEY_NAMES[p.params.key]} {p.params.scale}</span>
       </div>
