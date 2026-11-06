@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { store } from '../store';
 import { renderWav, type ExportResult, type ExportState } from '../engine/audio';
 import { exportProjectToMidi } from '../engine/midiExport';
+import { exportProjectToAls } from '../engine/alsExport';
 import { Btn } from '../ui';
 import { cn } from '../utils/cn';
 import type { Project } from '../engine/types';
 
 const STEPS: ExportState[] = ['VALIDATING', 'PREPARING', 'RENDERING', 'PROCESSING', 'ENCODING', 'SAVING', 'VERIFYING', 'COMPLETED'];
 
-type ExportTab = 'wav' | 'midi';
+type ExportTab = 'wav' | 'midi' | 'als';
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<ExportTab>('wav');
@@ -22,6 +23,9 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [midiUrl, setMidiUrl] = useState<string>('');
   const [midiName, setMidiName] = useState<string>('');
+  const [alsUrl, setAlsUrl] = useState<string>('');
+  const [alsName, setAlsName] = useState<string>('');
+  const [alsLoading, setAlsLoading] = useState(false);
 
   const cancel = useRef(false);
   const url = useRef('');
@@ -37,8 +41,9 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
       cancel.current = true;
       if (url.current) URL.revokeObjectURL(url.current);
       if (midiUrl) URL.revokeObjectURL(midiUrl);
+      if (alsUrl) URL.revokeObjectURL(alsUrl);
     };
-  }, [midiUrl]);
+  }, [midiUrl, alsUrl]);
 
   const busy = state !== 'IDLE' && state !== 'COMPLETED' && state !== 'FAILED' && state !== 'CANCELLED';
 
@@ -124,18 +129,36 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     setMidiName(filename);
   };
 
+  const handleExportAls = async () => {
+    if (alsUrl) URL.revokeObjectURL(alsUrl);
+    setAlsLoading(true);
+    try {
+      const p = store.get().project;
+      const blob = await exportProjectToAls(p);
+      const downloadUrl = URL.createObjectURL(blob);
+      const filename = `${p.name.replace(/[^\w.-]+/g, '_')}.als`;
+      setAlsUrl(downloadUrl);
+      setAlsName(filename);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAlsLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3" onClick={() => !busy && onClose()}>
-      <div className="w-full max-w-md rounded-xl border border-line bg-panel p-4 shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Export WAV and MIDI">
+      <div className="w-full max-w-md rounded-xl border border-line bg-panel p-4 shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Export WAV, MIDI and Ableton Live">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[14px] font-bold">Export · WAV Render & MIDI</h2>
+          <h2 className="text-[14px] font-bold">Export · WAV, MIDI & Ableton Live</h2>
           <Btn small tone="ghost" onClick={() => !busy && onClose()}>✕</Btn>
         </div>
 
         {/* Tab switch */}
         <div className="mb-3 flex gap-1 border-b border-line pb-2">
-          <Btn small active={tab === 'wav'} onClick={() => !busy && setTab('wav')}>WAV Audio Render</Btn>
-          <Btn small active={tab === 'midi'} onClick={() => !busy && setTab('midi')}>Standard MIDI (.mid)</Btn>
+          <Btn small active={tab === 'wav'} onClick={() => !busy && setTab('wav')}>WAV Render</Btn>
+          <Btn small active={tab === 'midi'} onClick={() => !busy && setTab('midi')}>MIDI (.mid)</Btn>
+          <Btn small active={tab === 'als'} onClick={() => !busy && setTab('als')}>Ableton Live (.als)</Btn>
         </div>
 
         {tab === 'wav' ? (
@@ -216,7 +239,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               )}
             </div>
           </>
-        ) : (
+        ) : tab === 'midi' ? (
           <>
             <p className="mb-3 text-[11px] leading-snug text-slate-400">
               Exports the project or individual instrument tracks as standard <b>Type 1 MIDI files (.mid)</b> at 480 PPQ, preserving note pitches, lengths, polymetric step timing, and velocities for external DAWs (Ableton Live, FL Studio, Bitwig, Logic).
@@ -250,6 +273,33 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
               {midiUrl && (
                 <a href={midiUrl} download={midiName} className="inline-flex h-8 items-center rounded-md border border-cyan bg-cyan/90 px-3 text-[11px] font-semibold text-black">
                   Download {midiName}
+                </a>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mb-3 text-[11px] leading-snug text-slate-400">
+              Exports the full arrangement directly as an <b>Ableton Live Set (.als)</b> project file with all sequenced MIDI tracks, clips, tempo, microtiming, and velocity curves.
+            </p>
+
+            <div className="mb-4 rounded border border-line bg-elev/60 p-3 text-[11px] text-slate-300">
+              <div className="font-semibold text-emerald-400">Ableton Live Project Specifications:</div>
+              <ul className="mt-1 list-inside list-disc space-y-0.5 text-[10px] text-slate-400">
+                <li>Ableton Live 11+ compatible Gzip-compressed XML (.als)</li>
+                <li>{currentProject.tracks.length} arrangement tracks with {currentProject.tracks.reduce((acc, t) => acc + t.clips.length, 0)} clips</li>
+                <li>Master tempo: {currentProject.params.bpm} BPM (4/4 time signature)</li>
+                <li>Directly double-click or drag into Ableton Live</li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Btn tone="amber" disabled={alsLoading} onClick={handleExportAls}>
+                {alsLoading ? 'Compressing Live Set...' : 'Generate Ableton Live Set (.als)'}
+              </Btn>
+              {alsUrl && (
+                <a href={alsUrl} download={alsName} className="inline-flex h-8 items-center rounded-md border border-cyan bg-cyan/90 px-3 text-[11px] font-semibold text-black">
+                  Download {alsName}
                 </a>
               )}
             </div>
