@@ -431,8 +431,18 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="flex shrink-0 items-center justify-between border-b border-line bg-[#161b22] px-3 py-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber">{sheet}</span>
+            <div className="flex shrink-0 items-center justify-between border-b border-line bg-[#161b22] px-3 py-1.5">
+              <span className="text-[10.5px] font-semibold tracking-wide text-amber">
+                {sheet === 'compose'
+                  ? 'Arrangement & Section Composer'
+                  : sheet === 'library'
+                    ? 'Instrument & Layer Catalog'
+                    : sheet === 'inspect'
+                      ? 'Track & Device Inspector'
+                      : sheet === 'assist'
+                        ? 'Underground AI Co-Producer'
+                        : 'Clip & Mixer View'}
+              </span>
               <div className="flex items-center gap-1">
                 <Btn small tone="ghost" onClick={() => setSheetTall((t) => !t)} title="Toggle sheet height">
                   {sheetTall ? '▾ Split' : '▴ Expand'}

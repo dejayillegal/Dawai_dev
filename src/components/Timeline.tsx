@@ -620,25 +620,27 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg">
       {/* Arrangement Zoom & Contextual Clip/Section Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-panel px-2 py-1">
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 sm:inline">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-panel px-2 py-1 select-none">
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 sm:inline">
           Arrangement
         </span>
 
         {/* Horizontal Zoom Controls */}
-        <div className="flex items-center gap-1 rounded border border-line bg-[#0e1216] px-1.5 py-0.5" title="Horizontal Bar Zoom">
+        <div className="flex items-center gap-1 rounded border border-line bg-[#0e1216] px-1.5 py-0.5" title="Arrangement Bar Zoom (Pixels Per Bar)">
+          <span className="hidden text-[8px] font-semibold uppercase tracking-wider text-slate-400 lg:inline">Zoom</span>
           <button
             type="button"
             aria-label="Zoom out"
             onClick={() => zoomBy(-4)}
             className="flex h-5 w-5 items-center justify-center rounded bg-elev text-[12px] font-bold text-slate-300 hover:bg-[#26303d] hover:text-amber"
+            title="Zoom out (−)"
           >
             −
           </button>
           <input
             aria-label="Timeline zoom"
             type="range"
-            className="!w-20"
+            className="!w-16"
             min={4}
             max={72}
             value={ppb}
@@ -649,6 +651,7 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
             aria-label="Zoom in"
             onClick={() => zoomBy(4)}
             className="flex h-5 w-5 items-center justify-center rounded bg-elev text-[12px] font-bold text-slate-300 hover:bg-[#26303d] hover:text-amber"
+            title="Zoom in (+)"
           >
             +
           </button>
@@ -657,44 +660,49 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
             aria-label="Zoom to fit arrangement"
             onClick={zoomToFit}
             className="rounded bg-elev px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-300 hover:bg-[#26303d] hover:text-amber"
+            title="Zoom to fit entire song in view"
           >
             Fit
           </button>
         </div>
 
         {/* Vertical Track Height Selector */}
-        <div className="flex items-center gap-0.5 rounded border border-line bg-[#0e1216] p-0.5" title="Track Row Height">
-          {([
-            [24, 'S'],
-            [32, 'M'],
-            [44, 'L'],
-          ] as const).map(([h, label]) => (
-            <button
-              key={h}
-              type="button"
-              aria-label={`Row height ${label}`}
-              onClick={() => setRowH(h)}
-              className={cn(
-                'h-5 w-5 rounded text-[9px] font-semibold transition-colors',
-                rowH === h ? 'bg-amber text-black' : 'text-slate-400 hover:text-slate-200'
-              )}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-1 rounded border border-line bg-[#0e1216] px-1.5 py-0.5" title="Track lane row height: Small (24px), Medium (32px), Large (44px)">
+          <span className="hidden text-[8px] font-semibold uppercase tracking-wider text-slate-400 lg:inline">Row Height</span>
+          <div className="flex items-center gap-0.5">
+            {([
+              [24, 'S', 'Small row height (24px)'],
+              [32, 'M', 'Medium row height (32px)'],
+              [44, 'L', 'Large row height (44px)'],
+            ] as const).map(([h, label, title]) => (
+              <button
+                key={h}
+                type="button"
+                aria-label={`Row height ${label}`}
+                title={title}
+                onClick={() => setRowH(h)}
+                className={cn(
+                  'h-5 px-1.5 rounded text-[9px] font-semibold transition-colors',
+                  rowH === h ? 'bg-amber text-black' : 'text-slate-400 hover:text-slate-200'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <Btn small active={showAuto} onClick={() => setShowAuto(!showAuto)} title="Show automation curves on tracks">
+        <Btn small active={showAuto} onClick={() => setShowAuto(!showAuto)} title="Show or hide automation curves overlaid on track lanes">
           Automation
         </Btn>
-        <Btn small active={follow} onClick={() => setFollow(!follow)} title="Auto-scroll with playhead">
-          Follow
+        <Btn small active={follow} onClick={() => setFollow(!follow)} title="Automatically scroll timeline with playback cursor">
+          {follow ? 'Follow: ON' : 'Follow: OFF'}
         </Btn>
         <Btn
           small
           active={view.loop.on}
           disabled={!selSec && !view.loop.on}
-          title="Loop the selected section"
+          title={selSec ? `Loop section: ${selSec.name} (Bars ${selSec.start + 1}–${selSec.start + selSec.bars})` : 'Select a section header to loop'}
           onClick={() => {
             if (view.loop.on) store.dispatch({ type: 'SET_LOOP', loop: { ...view.loop, on: false } }, 'Loop off');
             else if (selSec) {
@@ -705,7 +713,7 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
             }
           }}
         >
-          Loop section
+          {view.loop.on ? '⟳ Loop: Active' : selSec ? `⟳ Loop ${selSec.name}` : '⟳ Loop Section'}
         </Btn>
 
         {/* Contextual Clip Editing Action Bar */}
@@ -714,17 +722,17 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
             <Btn
               small
               tone="amber"
-              title="Create a new clip on the selected track at the playhead"
+              title={`Create a new clip on ${selTrack.name} at bar ${Math.floor(store.get().cursorBar) + 1}`}
               onClick={() => newClipAt(selTrack.id, Math.floor(store.get().cursorBar))}
             >
-              + Clip
+              + New Clip
             </Btn>
             {selClip && (
               <>
-                <Btn small tone="cyan" onClick={() => onOpenClip?.()} title="Open clip in Piano Roll">
-                  Edit Notes
+                <Btn small tone="cyan" onClick={() => onOpenClip?.()} title="Open clip in Piano Roll editor">
+                  Edit Notes ›
                 </Btn>
-                <Btn small onClick={splitSelectedAtPlayhead} title="Split clip at playhead (Ctrl+E)">
+                <Btn small onClick={splitSelectedAtPlayhead} title="Split clip at playhead position (Ctrl+E)">
                   Split
                 </Btn>
                 <Btn
@@ -732,7 +740,7 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
                   onClick={() => store.dispatch({ type: 'DUP_CLIP', copyId: uid('clip'), id: selClip.id }, 'Duplicate clip')}
                   title="Duplicate clip (Ctrl+D)"
                 >
-                  Dup
+                  Duplicate
                 </Btn>
                 <Btn
                   small
@@ -740,8 +748,9 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
                   onClick={() =>
                     store.dispatch({ type: 'SET_CLIP', id: selClip.id, patch: { mute: !selClip.mute } }, 'Mute clip')
                   }
+                  title="Mute or unmute this clip"
                 >
-                  Mute
+                  {selClip.mute ? 'Unmute' : 'Mute'}
                 </Btn>
                 <Btn
                   small
@@ -751,9 +760,9 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
                       'Transpose -12st'
                     )
                   }
-                  title="Transpose clip down 1 octave"
+                  title="Transpose clip down 1 octave (−12 semitones)"
                 >
-                  −12st
+                  −1 Oct
                 </Btn>
                 <Btn
                   small
@@ -763,9 +772,9 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
                       'Transpose +12st'
                     )
                   }
-                  title="Transpose clip up 1 octave"
+                  title="Transpose clip up 1 octave (+12 semitones)"
                 >
-                  +12st
+                  +1 Oct
                 </Btn>
                 <Btn
                   small
@@ -774,8 +783,9 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
                     store.dispatch({ type: 'DEL_CLIP', id: selClip.id }, 'Delete clip');
                     store.select({ kind: 'track', id: selTrack.id });
                   }}
+                  title="Delete this clip (Delete / Backspace)"
                 >
-                  Del
+                  Delete
                 </Btn>
               </>
             )}
@@ -785,16 +795,24 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
         {/* Contextual Section Action Bar */}
         {selSec && !locked && (
           <div className="flex items-center gap-1 border-l border-line pl-1.5">
-            <span className="text-[10px] font-semibold text-slate-300">{selSec.name}</span>
+            <span className="text-[10px] font-semibold text-slate-300">
+              Section: <span className="text-amber">{selSec.name}</span> ({selSec.bars}b)
+            </span>
             <Btn
               small
               active={selSec.lock}
               onClick={() => store.dispatch({ type: 'SET_SECTION', id: selSec.id, patch: { lock: !selSec.lock } }, 'Lock section')}
+              title="Lock section to protect notes and automation during generation"
             >
-              {selSec.lock ? '🔒 Locked' : 'Unlock'}
+              {selSec.lock ? '🔒 Locked' : '🔓 Lock'}
             </Btn>
-            <Btn small disabled={selSec.lock} onClick={() => regenerateSectionNow(selSec.id)}>
-              ↻ Regen
+            <Btn
+              small
+              disabled={selSec.lock}
+              onClick={() => regenerateSectionNow(selSec.id)}
+              title="Regenerate musical patterns in this section"
+            >
+              ↻ Regenerate
             </Btn>
           </div>
         )}

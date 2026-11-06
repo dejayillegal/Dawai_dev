@@ -79,109 +79,137 @@ export function ProjectFiles({ compact }: { compact: boolean }) {
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-label="Project files and editing commands"
-          className="flex h-9 cursor-pointer items-center rounded-md border border-line bg-elev px-2.5 text-[11px] font-medium text-slate-200 hover:bg-[#232b35]"
+          className="flex h-7 cursor-pointer items-center rounded border border-line bg-elev px-2 text-[11px] font-semibold text-slate-200 hover:bg-[#232b35] transition-colors"
         >
           Project ▾
         </button>
         {open && (
-          <div className="absolute left-0 top-full z-[90] mt-1 flex w-64 flex-col gap-1.5 rounded-md border border-line bg-panel p-3 shadow-2xl">
-            <div className="mb-1 flex items-center justify-between">
-              <span role="status" className="text-[10px] text-slate-400">
-                {app.saveStatus} · project v1
-              </span>
-              <button
-                type="button"
-                aria-label="Close project menu"
-                onClick={() => setOpen(false)}
-                className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-elev hover:text-white"
-              >
-                ✕
-              </button>
+          <>
+            <div
+              className="fixed inset-0 z-[80]"
+              onClick={() => setOpen(false)}
+              aria-hidden="true"
+            />
+            <div className="absolute left-0 top-full z-[90] mt-1 flex w-68 flex-col gap-2 rounded-md border border-line bg-panel p-2.5 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-line pb-1.5">
+                <span role="status" className="text-[10px] font-medium text-slate-400">
+                  Status: <span className="text-amber">{app.saveStatus}</span> · v1
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close project menu"
+                  onClick={() => setOpen(false)}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-elev hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* File Storage */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Project Storage</span>
+                <Btn onClick={save} title="Download a JSON backup file to your device">Save Backup (.aidaw.json)</Btn>
+                <Btn
+                  onClick={() => {
+                    setOpen(false);
+                    input.current?.click();
+                  }}
+                  title="Open an existing project JSON file"
+                >
+                  Open Project File…
+                </Btn>
+                <Btn
+                  onClick={() => {
+                    store.flushSave();
+                    setOpen(false);
+                  }}
+                  title="Immediately write active project to IndexedDB autosave"
+                >
+                  Save Autosave Now
+                </Btn>
+              </div>
+
+              {/* Export Options */}
+              <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+                <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Export File</span>
+                <Btn tone="cyan" onClick={exportMidiNow} title="Download full arrangement as standard MIDI file">
+                  Export MIDI File (SMF Type 1)
+                </Btn>
+              </div>
+
+              {/* Recovery */}
+              <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+                <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Database &amp; Recovery</span>
+                <Btn
+                  onClick={() => {
+                    setOpen(false);
+                    void store
+                      .getDurableRecovery()
+                      .then((recovery) => {
+                        if (recovery) setPending({ project: recovery.project, recovery });
+                        else store.reportError('No database recovery snapshot is available.');
+                      })
+                      .catch((error) => store.reportError(error));
+                  }}
+                  title="Review database snapshots in case of interruption"
+                >
+                  Review Database Recovery…
+                </Btn>
+                {app.databaseRecovery && (
+                  <Btn
+                    tone="amber"
+                    onClick={() => {
+                      setOpen(false);
+                      void store.keepCurrentRecovery();
+                    }}
+                  >
+                    Keep Current Local Edits
+                  </Btn>
+                )}
+              </div>
+
+              {compact && (
+                <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+                  <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Quick Actions</span>
+                  <Btn
+                    disabled={app.cursor === 0}
+                    onClick={() => {
+                      store.undo();
+                      setOpen(false);
+                    }}
+                  >
+                    ↶ Undo
+                  </Btn>
+                  <Btn
+                    disabled={app.cursor === app.entries.length}
+                    onClick={() => {
+                      store.redo();
+                      setOpen(false);
+                    }}
+                  >
+                    ↷ Redo
+                  </Btn>
+                  <Btn
+                    onClick={() => {
+                      seek(0);
+                      setOpen(false);
+                    }}
+                  >
+                    ⏮ Return to Start (Bar 1)
+                  </Btn>
+                  <Btn
+                    active={app.project.loop.on}
+                    onClick={() => {
+                      toggleLoop();
+                      setOpen(false);
+                    }}
+                  >
+                    ⟳ Loop Selected Section
+                  </Btn>
+                </div>
+              )}
             </div>
-            <Btn onClick={save}>Download project backup</Btn>
-            <Btn tone="cyan" onClick={exportMidiNow}>Export MIDI File (SMF Type 1)</Btn>
-            <Btn
-              onClick={() => {
-                setOpen(false);
-                input.current?.click();
-              }}
-            >
-              Open project…
-            </Btn>
-            <Btn
-              onClick={() => {
-                store.flushSave();
-                setOpen(false);
-              }}
-            >
-              Save autosave now
-            </Btn>
-            <Btn
-              onClick={() => {
-                setOpen(false);
-                void store
-                  .getDurableRecovery()
-                  .then((recovery) => {
-                    if (recovery) setPending({ project: recovery.project, recovery });
-                    else store.reportError('No database recovery snapshot is available.');
-                  })
-                  .catch((error) => store.reportError(error));
-              }}
-            >
-              Review database recovery…
-            </Btn>
-            {app.databaseRecovery && (
-              <Btn
-                tone="amber"
-                onClick={() => {
-                  setOpen(false);
-                  void store.keepCurrentRecovery();
-                }}
-              >
-                Keep current local edits
-              </Btn>
-            )}
-            {compact && (
-              <>
-                <div className="my-0.5 border-t border-line" />
-                <Btn
-                  disabled={app.cursor === 0}
-                  onClick={() => {
-                    store.undo();
-                    setOpen(false);
-                  }}
-                >
-                  Undo
-                </Btn>
-                <Btn
-                  disabled={app.cursor === app.entries.length}
-                  onClick={() => {
-                    store.redo();
-                    setOpen(false);
-                  }}
-                >
-                  Redo
-                </Btn>
-                <Btn
-                  onClick={() => {
-                    seek(0);
-                    setOpen(false);
-                  }}
-                >
-                  Return to start
-                </Btn>
-                <Btn
-                  active={app.project.loop.on}
-                  onClick={() => {
-                    toggleLoop();
-                    setOpen(false);
-                  }}
-                >
-                  Loop selected section
-                </Btn>
-              </>
-            )}
-          </div>
+          </>
         )}
       </div>
       <input
