@@ -15,7 +15,7 @@ export function Compose() {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <Section title="Stylistic blueprint">
+      <Section title="Stylistic blueprint" collapsible>
         <div className="grid grid-cols-2 gap-1.5">
           {Object.values(STYLES).map((s) => (
             <button key={s.id} onClick={() => set({ style: s.id, bpm: Math.round((s.bpm[0] + s.bpm[1]) / 2), scale: s.scales[0], swing: s.swing, dirt: s.dirt, form: 'auto' }, 'style')}
@@ -81,7 +81,7 @@ export function Compose() {
         {P.form !== 'auto' && <p className="mt-1 text-[10px] text-slate-500">{FORMS[P.form]?.desc}</p>}
       </Section>
 
-      <Section title="Musical intent">
+      <Section title="Musical intent" collapsible>
         <div className="grid grid-cols-3 gap-1.5">
           <label className="text-[10px] uppercase text-slate-400">Key<select value={P.key} onChange={(e) => set({ key: +e.target.value }, 'key')} className="mt-0.5 w-full text-[11px]">{KEY_NAMES.map((k, i) => <option key={k} value={i}>{k}</option>)}</select></label>
           <label className="col-span-2 text-[10px] uppercase text-slate-400">Scale / mode<select value={P.scale} onChange={(e) => set({ scale: e.target.value as ScaleId }, 'scale')} className="mt-0.5 w-full text-[11px]">{Object.entries(SCALE_NAMES).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
@@ -107,7 +107,7 @@ export function Compose() {
         </div>
       </Section>
 
-      <Section title="Generate">
+      <Section title="Generate" collapsible>
         <div className="grid grid-cols-1 gap-1.5">
           <Btn tone="amber" className="!h-9" onClick={() => composeGenerate('new')}>Generate evolving arrangement</Btn>
           <Btn onClick={() => composeGenerate('keep')} title="Re-generate using the current section structure & energies; locked sections/tracks are preserved">Regenerate · keep structure &amp; locks</Btn>
@@ -116,7 +116,7 @@ export function Compose() {
         <p className="mt-1.5 text-[10px] leading-snug text-slate-500">Peak-first: the densest loop for each of {style.layers.length} layers is generated first, then clips are removed per section by energy rules. {lockedTracks ? `${lockedTracks} locked track(s) are protected.` : 'Lock a track (L) to protect it.'} All results are undoable.</p>
       </Section>
 
-      <Section title="Section matrix" right={<span className="text-[9px] text-slate-500">{p.sections.length} sections · {p.formId}</span>}>
+      <Section title="Section matrix" collapsible right={<span className="text-[9px] text-slate-500">{p.sections.length} sections · {p.formId}</span>}>
         <div className="space-y-1">
           {p.sections.map((s, i) => (
             <div key={s.id} onClick={() => store.select({ kind: 'section', id: s.id })}
@@ -136,7 +136,7 @@ export function Compose() {
         <p className="mt-1.5 text-[10px] text-slate-500">Energy edits take effect on “Regenerate · keep structure” or ↻ per section.</p>
       </Section>
 
-      <Section title="Layer activity matrix" right={<span className="text-[9px] text-slate-500">click cell: auto → off → sparse → full</span>}>
+      <Section title="Layer activity matrix" collapsible right={<span className="text-[9px] text-slate-500">click cell: auto → off → sparse → full</span>}>
         <div className="overflow-x-auto">
           <table className="border-separate text-[9px]" style={{ borderSpacing: 1 }}>
             <thead><tr><th className="sticky left-0 z-10 bg-panel" />{p.sections.map((s, i) => <th key={s.id} title={s.name} className="px-0 font-normal" style={{ color: ROLE_COLORS[s.role] }}><div className={cn('w-[18px] text-center', selId === s.id && 'font-bold text-white')}>{i + 1}</div></th>)}</tr></thead>

@@ -796,7 +796,7 @@ export function Inspect() {
     const layers = p.tracks.filter((t) => t.group !== 'Transition' && LAYERS[t.layer]);
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Section title="Section" right={<Badge color={ROLE_COLORS[s.role]}>{ROLE_NAMES[s.role]}</Badge>}>
+        <Section title="Section & Macro Energy" collapsible right={<Badge color={ROLE_COLORS[s.role]}>{ROLE_NAMES[s.role]}</Badge>}>
           <div className="mb-2 flex items-center justify-between text-[12px]">
             <b>{s.name}</b>
             <span className="font-mono tabular-nums text-slate-400">
@@ -840,7 +840,7 @@ export function Inspect() {
             </Btn>
           </div>
         </Section>
-        <Section title="Transition rules">
+        <Section title="Transition rules" collapsible>
           <div className="space-y-1 text-[11px] text-slate-300">
             <div>
               Incoming ΔE:{' '}

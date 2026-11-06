@@ -172,9 +172,12 @@ export default function App() {
   const [dock, setDock] = useState<Dock>('roll');
   const [dockOpen, setDockOpen] = useState(true);
   const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const [left, setLeft] = useState<Left>('compose');
   const [sheet, setSheet] = useState<Sheet>(null);
   const [sheetTall, setSheetTall] = useState(false);
+  const [inspectOpen, setInspectOpen] = useState(true);
+  const [assistOpen, setAssistOpen] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -369,25 +372,83 @@ export default function App() {
               </button>
             )}
           </main>
-          <aside className="flex w-[344px] shrink-0 flex-col border-l border-line bg-panel">
-            <div className="flex min-h-0 flex-1 flex-col border-b border-line">
-              <div className="shrink-0 border-b border-line px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Inspect <span className="font-normal normal-case tracking-normal text-slate-600">· follows selection</span>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                <Inspect />
-              </div>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="shrink-0 border-b border-line px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan">
-                Assist{' '}
-                <span className="font-normal normal-case tracking-normal text-slate-600">
-                  · copilot · ghost diffs · diagnostics
+          {rightOpen ? (
+            <aside className="flex w-[344px] shrink-0 flex-col border-l border-line bg-panel">
+              <div className="flex shrink-0 items-center justify-between border-b border-line bg-[#161b22] px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Inspector &amp; Copilot
                 </span>
+                <button
+                  type="button"
+                  title="Collapse right panel"
+                  onClick={() => setRightOpen(false)}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-elev hover:text-white transition-colors"
+                >
+                  ▸
+                </button>
               </div>
-              <Assist />
-            </div>
-          </aside>
+              <div className={cn('flex flex-col border-b border-line transition-all', inspectOpen ? 'min-h-0 flex-1' : 'shrink-0')}>
+                <div
+                  className="flex shrink-0 cursor-pointer items-center justify-between border-b border-line px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 hover:bg-[#181f27] transition-colors"
+                  onClick={() => setInspectOpen((o) => !o)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-bold">{inspectOpen ? '▾' : '▸'}</span>
+                    <span>Inspect</span>
+                    <span className="font-normal normal-case tracking-normal text-slate-600">· follows selection</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[9px] font-medium text-slate-400 hover:text-white"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInspectOpen((o) => !o);
+                    }}
+                  >
+                    {inspectOpen ? 'Collapse' : 'Expand'}
+                  </button>
+                </div>
+                {inspectOpen && (
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                    <Inspect />
+                  </div>
+                )}
+              </div>
+              <div className={cn('flex flex-col transition-all', assistOpen ? 'min-h-0 flex-1' : 'shrink-0')}>
+                <div
+                  className="flex shrink-0 cursor-pointer items-center justify-between border-b border-line px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan hover:bg-[#181f27] transition-colors"
+                  onClick={() => setAssistOpen((o) => !o)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-bold">{assistOpen ? '▾' : '▸'}</span>
+                    <span>Assist</span>
+                    <span className="font-normal normal-case tracking-normal text-slate-600">
+                      · copilot · ghost diffs
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[9px] font-medium text-slate-400 hover:text-white"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAssistOpen((o) => !o);
+                    }}
+                  >
+                    {assistOpen ? 'Collapse' : 'Expand'}
+                  </button>
+                </div>
+                {assistOpen && <Assist />}
+              </div>
+            </aside>
+          ) : (
+            <button
+              aria-label="Show right dock"
+              onClick={() => setRightOpen(true)}
+              className="w-5 shrink-0 border-l border-line bg-panel text-[10px] text-slate-400 hover:text-cyan [writing-mode:vertical-rl]"
+            >
+              ◂ INSPECT / ASSIST
+            </button>
+          )}
         </div>
         {exporting && <ExportModal onClose={() => setExporting(false)} />}
       </div>

@@ -297,13 +297,21 @@ export function Btn({ children, onClick, active, tone = 'default', className, ti
   );
 }
 
-export function Section({ title, children, right, className }: { title: string; children: ReactNode; right?: ReactNode; className?: string }) {
+export function Section({ title, children, right, className, collapsible, defaultOpen = true }: { title: string; children: ReactNode; right?: ReactNode; className?: string; collapsible?: boolean; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={cn('border-b border-line px-3 py-2.5', className)}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{title}</h3>{right}
+      <div
+        className={cn('mb-2 flex items-center justify-between gap-2', collapsible && 'cursor-pointer select-none hover:text-white transition-colors')}
+        onClick={collapsible ? () => setOpen((o) => !o) : undefined}
+      >
+        <div className="flex items-center gap-1.5">
+          {collapsible && <span className="text-[10px] text-slate-400">{open ? '▾' : '▸'}</span>}
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{title}</h3>
+        </div>
+        {right}
       </div>
-      {children}
+      {(!collapsible || open) && children}
     </section>
   );
 }

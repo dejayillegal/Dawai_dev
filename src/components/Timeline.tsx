@@ -68,6 +68,7 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
   const [rowH, setRowH] = useState<24 | 32 | 44>(32);
   const [showAuto, setShowAuto] = useState(true);
   const [follow, setFollow] = useState(true);
+  const [macroCollapsed, setMacroCollapsed] = useState(false);
   const [drag, setDrag] = useState<ClipDrag | null>(null);
   const [eDrag, setEDrag] = useState<{ id: string; e: number } | null>(null);
 
@@ -851,7 +852,17 @@ export function Timeline({ onOpenClip }: { onOpenClip?: () => void }) {
               style={{ width: HEAD_W }}
             >
               <div className="flex items-center justify-between">
-                <span className="font-semibold uppercase tracking-wider text-slate-300">Macro · Energy</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setMacroCollapsed((c) => !c)}
+                    title={macroCollapsed ? 'Expand Macro Energy lane' : 'Collapse Macro Energy lane'}
+                    className="rounded px-1 text-[10px] text-slate-400 hover:bg-elev hover:text-white transition-colors"
+                  >
+                    {macroCollapsed ? '▸' : '▾'}
+                  </button>
+                  <span className="font-semibold uppercase tracking-wider text-slate-300">Macro · Energy</span>
+                </div>
                 <span className="font-mono text-[9px] text-slate-500">{view.tracks.length} trk</span>
               </div>
               <span className="text-[9px] text-slate-500">click flag · drag curve · seek ruler</span>
