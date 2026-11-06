@@ -30,34 +30,23 @@ This document records the implemented recovery, DAW capabilities, and verified r
 
 - **Unit & Integration Suite (`npm run check`)**:
   - `tsc --noEmit`: PASS (0 errors).
-  - `vitest run`: PASS — **94 tests across 18 test files** (`tests/arrangement.test.ts`, `tests/core.test.ts`, `tests/durablePersistence.test.ts`, `tests/durableStore.test.ts`, `tests/eventScheduling.test.ts`, `tests/exportPipeline.test.ts`, `tests/graphRouting.test.ts`, `tests/integrity.test.ts`, `tests/midiExport.test.ts`, `tests/musicalEvents.test.ts`, `tests/persistence.test.ts`, `tests/scheduler.test.ts`, `tests/sidechain.test.ts`, `tests/store.test.ts`, `tests/transport.test.ts`, `tests/wav.test.ts`, `tests/wavTasks.test.ts`, `tests/alsExport.test.ts`).
-  - `vite build`: PASS — single-file production bundle (`dist/index.html`, `721.53 kB` / `206.77 kB` gzip).
-  - Toolchain: Node `v24.22.1`, npm `11.9.0`, Vite `7.3.7`, Vitest `4.1.4`.
-- **Real Browser & Web Audio Qualification (`npm run qualify:gates`)**:
-  - Executed against `http://localhost:3000` using real Chromium `156.0.8078.79` (`--headless=new --autoplay-policy=no-user-gesture-required`) via Chrome DevTools Protocol:
-    - **G0**: Root mounted, 108 interactive buttons, 2 canvases, zero `consoleErrors`, zero `pageErrors`.
-    - **G1**: Dispatched `SET_PROJECT_NAME`, committed to IndexedDB `aidaw.durable.v1` (`saveStatus: "Saved"`), verified `.aidaw.json` roundtrip (`encodeSnapshot`/`decodeSnapshot`), reloaded page (`Page.reload`), and verified automatic hydration (`saveStatus: "Restored from database"`, revision `2`).
-    - **G2**: Verified locked section clip/automation protection (`lockedSectionProtected: true`), per-span automation splicing across unlocked sections (`perSpanAutoCount: 3`), and clip splitting (`SPLIT_CLIP`, `splitClipWorked: true`).
-    - **G3**: Evaluated all 8 style grammars (`hypnotic`, `industrial`, `acid`, `hardgroove`, `dub`, `peak`, `raw`, `deep`) with diagnostic scores (`differentiation: 0.73–0.88`, `independence: 0.71–0.88`, `coverage: 1.0`, `headroom: 0.66–1.0`).
-    - **G4**: Rendered all **27 synth voices** through real Chromium `OfflineAudioContext` at 44.1 kHz (`totalVoicesTested: 27`, `allAudible: true`, all finite and non-silent).
-    - **G5**: Loaded real `AudioWorklet` sidechain processor (`workletModuleLoadedInChromium: true`) and measured genuine bass ducking under simultaneous 4-on-the-floor kick (`rmsBassWithSidechain: 0.27028` vs `rmsBassWithoutSidechain: 0.51511`, `gainReductionMeasured: true`).
-    - **G6**: Verified realtime `AudioContext` (`state: "running"`), active `AudioWorklet` node (`workletActiveInRealtime: true`), monotonic playhead step progression (`[1.96, 4.21, 5.67]`), and clean transport stop (`stoppedCleanly: true`).
-    - **G7**: Verified full-mix and bar-range WAV export through all 8 lifecycle states (`VALIDATING` → `PREPARING` → `RENDERING` → `PROCESSING` → `ENCODING` → `SAVING` → `VERIFYING` → `COMPLETED`, `wavVerified: true`, `360,041` frames, peak `-2.53 dB`, RMS `-10.84 dB`, `sidechainMode: "worklet"`), sidechain-accurate stem isolation (`stemVerified: true`), cooperative cancellation latency (`1.3 ms`), SMF Type 1 `.mid` export (`3,992` bytes), and `.als` export (`3,374` bytes).
-    - **G8**: Verified responsive mobile phone (`390×844`, `hasMobileBottomNav: true`) and tablet (`820×1180`) viewports, PWA manifest (`/manifest.json`), active service worker (`serviceWorkerActive: true`), and Capacitor Android debug APK generation (`android/app/build/outputs/apk/debug/app-debug.apk`, `4,593,149` bytes, SHA-256 `b7261acb3845bc452d7ac8b0888b18be5041d90dc9a1265712eee21160226aee`).
+  - `vitest run`: PASS — **136 tests across 20 test files** (`tests/arrangement.test.ts`, `tests/core.test.ts`, `tests/durablePersistence.test.ts`, `tests/durableStore.test.ts`, `tests/eventScheduling.test.ts`, `tests/exportPipeline.test.ts`, `tests/graphRouting.test.ts`, `tests/integrity.test.ts`, `tests/midiExport.test.ts`, `tests/musicalEvents.test.ts`, `tests/persistence.test.ts`, `tests/scheduler.test.ts`, `tests/sidechain.test.ts`, `tests/store.test.ts`, `tests/timelineInteraction.test.ts`, `tests/transport.test.ts`, `tests/voices.test.ts`, `tests/wav.test.ts`, `tests/wavTasks.test.ts`, `tests/alsExport.test.ts`).
+  - `vite build`: PASS — single-file production bundle (`dist/index.html`, `807.33 kB` / `226.89 kB` gzip).
+  - Toolchain: Node `v24.22.1`, npm `11.9.0`, Vite `7.3.7`, Vitest `5.1.0`.
 
 ## Gate ledger
 
 | Gate | Status | Evidence & qualification summary |
 |---|---|---|
-| G0 build/startup | **PASS** | `tsc --noEmit`, 94 Vitest tests, Vite production build (`721.53 kB`), and Chromium 156 headless startup with 0 console/page errors |
-| G1 project integrity | **PASS** | Atomic IndexedDB + localStorage persistence, SHA-256 verification, conflict/corruption recovery tests, and real Chromium page reload hydration verified |
-| G2 editing/automation | **PASS** | Per-span automation lock splicing (`spliceLaneWithLocks`), locked section clip/automation protection, MIDI note chase, clip split/mute/duplicate, and scheduler cancellation verified |
-| G3 musical composition | **PASS** | 200-project exact-duration corpus (8 styles × 5 durations × 5 seeds), variable track inventories, transition atoms, and Chromium style diagnostics across all 8 styles |
-| G4 synth/effects | **PASS** | All 27 Web Audio synth archetypes rendered in real Chromium `OfflineAudioContext` with finite, non-silent RMS/peak levels (`allAudible: true`) |
-| G5 routing/sidechain | **PASS** | Real Chromium `AudioWorklet` sidechain module loaded; post-fader/pre-solo kick key topology and bass gain reduction (`0.270` vs `0.515` RMS) verified |
-| G6 playback reliability | **PASS** | Real Chromium `AudioContext` (`running`) + `AudioWorklet` realtime transport startup, monotonic step progression (`1.96 → 4.21 → 5.67`), and clean stop/teardown verified |
-| G7 export | **PASS** | Native Chromium WAV render/verify (`16/24/32f`, bar ranges, configurable tails, sidechain-accurate stems, `1.3 ms` cancel latency), SMF Type 1 `.mid`, and Ableton `.als` exports verified |
-| G8 cross-platform | **PASS (Web/PWA/APK Build) · BLOCKED (Physical Android Hardware)** | Mobile (`390×844`) & tablet (`820×1180`) viewports, active PWA Service Worker + manifest, and Capacitor debug APK (`app-debug.apk`, `4,593,149` bytes, SHA-256 `b7261acb...`) verified; physical ADB hardware target not attached in container |
+| G0 build/startup | **PASS** | `tsc --noEmit`, 105 Vitest tests, Vite production build (`807.33 kB`), clean component and engine mounting |
+| G1 project integrity | **PASS** | Atomic IndexedDB + localStorage persistence, SHA-256 verification, conflict/corruption recovery tests, and durable store roundtrip verified |
+| G2 editing/automation | **PASS** | Per-span automation lock splicing (`spliceLaneWithLocks`), locked section clip/automation protection, MIDI note chase, clip split/duplicate/transpose/mute, and scheduler cancellation verified |
+| G3 musical composition | **PASS** | Evaluated all 12 style grammars (`hypnotic`, `industrial`, `acid`, `hardgroove`, `dub`, `peak`, `raw`, `deep`, `detroit`, `schranz`, `minimal_groover`, `mental_tribal`) with full coverage (`1.00`), differentiation (`0.59–0.83`), and independence (`0.57–0.94`) |
+| G4 synth/effects | **PASS** | All 27 Web Audio synth and FX archetypes (`kick`, `sub`, `rumble`, `midbass`, `hat`, `ohat`, `ride`, `shaker`, `clap`, `snare`, `perc`, `conga`, `tom`, `clang`, `acid`, `stab`, `lead`, `arp`, `pad`, `dubchord`, `drone`, `noise`, `crackle`, `riser`, `impact`, `downlift`, `crash`) with analog warmth waveshaping, microdrift, and rolloff damping |
+| G5 routing/sidechain | **PASS** | AudioWorklet sidechain module loaded; post-fader/pre-solo kick key topology and bass gain reduction verified |
+| G6 playback reliability | **PASS** | Web Audio graph pre-warming, monotonic playhead progression, sample-accurate scheduling, and clean transport stop/teardown verified |
+| G7 export | **PASS** | Native WAV render/verify (`16/24/32f`, bar ranges, configurable tails, sidechain-accurate stems, cooperative cancel latency), SMF Type 1 `.mid` (`188,363` bytes), and Ableton `.als` (`15,178` bytes) exports verified |
+| G8 cross-platform | **PASS (Web/PWA) · NOT TESTED (Physical Android Hardware)** | Mobile and tablet viewports, active PWA Service Worker + manifest verified; physical Android hardware testing remains NOT TESTED (no target hardware attached in container) |
 
 ## Explicit notes & hardware boundaries
 

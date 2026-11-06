@@ -137,9 +137,16 @@ function AutoFilterPlot({
     const up = () => {
       window.removeEventListener('pointermove', mv);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      try {
+        cv.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore if already released
+      }
     };
     window.addEventListener('pointermove', mv);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   return (

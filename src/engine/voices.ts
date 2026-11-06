@@ -391,31 +391,106 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       done(env, [car, mod], t + 0.32, out); break;
     }
     case 'riser': {
-      const dur = n.d * env.stepDur; const s = noiseSrc(env, t, true); const bp = filt(ctx, 'bandpass', 400, 4);
-      bp.frequency.setValueAtTime(400, t); bp.frequency.exponentialRampToValueAtTime(9000, t + dur);
-      const g = gz(ctx, t); g.gain.setValueAtTime(0.01, t); g.gain.exponentialRampToValueAtTime(v * 0.5, t + dur * 0.98); g.gain.linearRampToValueAtTime(0, t + dur + 0.04);
-      const o = osc(ctx, 'sawtooth', 150, t); o.frequency.exponentialRampToValueAtTime(2000, t + dur); const lp = filt(ctx, 'lowpass', 3000); const og = gz(ctx, t);
-      og.gain.setValueAtTime(0.001, t); og.gain.exponentialRampToValueAtTime(v * 0.1, t + dur * 0.98); og.gain.linearRampToValueAtTime(0, t + dur + 0.04);
-      s.connect(bp); bp.connect(g); g.connect(out); o.connect(lp); lp.connect(og); og.connect(out); done(env, [s, o], t + dur + 0.06, out); break;
+      // Warm tape-swept analog riser / modular tension swell: dark filtered noise + warm triangle sub/mid sweep with tape saturation
+      const dur = n.d * env.stepDur;
+      const s = noiseSrc(env, t, true);
+      const bp = filt(ctx, 'bandpass', 240, 1.8);
+      bp.frequency.setValueAtTime(240, t);
+      bp.frequency.exponentialRampToValueAtTime(3200, t + dur);
+      const g = gz(ctx, t);
+      g.gain.setValueAtTime(0.005, t);
+      g.gain.exponentialRampToValueAtTime(v * 0.42, t + dur * 0.98);
+      g.gain.linearRampToValueAtTime(0, t + dur + 0.04);
+
+      // Warm analog VCO swell (triangle/sine rising into warm saturation, no piercing high sawtooth whine)
+      const o = osc(ctx, 'triangle', 75, t, drift(env, 3));
+      o.frequency.exponentialRampToValueAtTime(580, t + dur);
+      const lp = filt(ctx, 'lowpass', 1100, 1.1);
+      const og = gz(ctx, t);
+      og.gain.setValueAtTime(0.001, t);
+      og.gain.exponentialRampToValueAtTime(v * 0.18, t + dur * 0.98);
+      og.gain.linearRampToValueAtTime(0, t + dur + 0.04);
+
+      const ws = shaper(ctx, 1.45 + env.dirt * 0.8);
+      const postLp = filt(ctx, 'lowpass', 3600, 0.7);
+
+      s.connect(bp); bp.connect(g); g.connect(ws);
+      o.connect(lp); lp.connect(og); og.connect(ws);
+      ws.connect(postLp); postLp.connect(out);
+      done(env, [s, o], t + dur + 0.06, out); break;
     }
     case 'impact': {
-      const o = osc(ctx, 'sine', 150, t); o.frequency.exponentialRampToValueAtTime(28, t + 0.7);
-      const g = gz(ctx, t); g.gain.linearRampToValueAtTime(v * 0.95, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0005, t + 1.5);
-      const s = noiseSrc(env, t); const lp = filt(ctx, 'lowpass', 900); const ng = gz(ctx, t); ng.gain.setValueAtTime(v * 0.35, t); ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.45);
-      const ws = shaper(ctx, 2); o.connect(g); g.connect(ws); ws.connect(out); s.connect(lp); lp.connect(ng); ng.connect(out); done(env, [o, s], t + 1.55, out); break;
+      // Subterranean concrete warehouse impact: deep 909-style sub-thud + tape-damped acoustic boom (no cheesy white-noise explosion)
+      const o = osc(ctx, 'sine', 95, t);
+      o.frequency.exponentialRampToValueAtTime(42, t + 0.08);
+      o.frequency.exponentialRampToValueAtTime(28, t + 0.75);
+      const g = gz(ctx, t);
+      g.gain.linearRampToValueAtTime(v * 0.9, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0004, t + 1.4);
+
+      // Warm acoustic room/vault pressure burst
+      const s = noiseSrc(env, t);
+      const lpNoise = filt(ctx, 'lowpass', 420, 1.2);
+      const ng = gz(ctx, t);
+      ng.gain.setValueAtTime(v * 0.28, t);
+      ng.gain.exponentialRampToValueAtTime(0.0004, t + 0.38);
+
+      const ws = shaper(ctx, 1.5);
+      const postLp = filt(ctx, 'lowpass', 650, 0.7);
+      o.connect(g); g.connect(ws);
+      s.connect(lpNoise); lpNoise.connect(ng); ng.connect(ws);
+      ws.connect(postLp); postLp.connect(out);
+      done(env, [o, s], t + 1.45, out); break;
     }
     case 'downlift': {
-      const dur = n.d * env.stepDur; const s = noiseSrc(env, t, true); const bp = filt(ctx, 'bandpass', 7000, 2.5);
-      bp.frequency.setValueAtTime(7000, t); bp.frequency.exponentialRampToValueAtTime(180, t + dur);
-      const g = gz(ctx, t); g.gain.linearRampToValueAtTime(v * 0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      const o = osc(ctx, 'sine', 200, t); o.frequency.exponentialRampToValueAtTime(32, t + dur * 0.6); const og = gz(ctx, t);
-      og.gain.linearRampToValueAtTime(v * 0.35, t + 0.02); og.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.8);
-      s.connect(bp); bp.connect(g); g.connect(out); o.connect(og); og.connect(out); done(env, [s, o], t + dur + 0.05, out); break;
+      // Dark tape wash / low-frequency resonant exhale: filtered organic noise descending into subterranean sub
+      const dur = n.d * env.stepDur;
+      const s = noiseSrc(env, t, true);
+      const bp = filt(ctx, 'bandpass', 2400, 1.4);
+      bp.frequency.setValueAtTime(2400, t);
+      bp.frequency.exponentialRampToValueAtTime(140, t + dur);
+      const g = gz(ctx, t);
+      g.gain.linearRampToValueAtTime(v * 0.35, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+
+      // Low-frequency sub exhale
+      const o = osc(ctx, 'sine', 110, t);
+      o.frequency.exponentialRampToValueAtTime(30, t + dur * 0.7);
+      const og = gz(ctx, t);
+      og.gain.linearRampToValueAtTime(v * 0.28, t + 0.02);
+      og.gain.exponentialRampToValueAtTime(0.0008, t + dur * 0.85);
+
+      const postLp = filt(ctx, 'lowpass', 2800, 0.7);
+      s.connect(bp); bp.connect(g); g.connect(postLp);
+      o.connect(og); og.connect(postLp); postLp.connect(out);
+      done(env, [s, o], t + dur + 0.05, out); break;
     }
     case 'crash': {
-      const s = noiseSrc(env, t, true); const hp = filt(ctx, 'highpass', n.p === 1 ? 3500 : 4500); const g = gz(ctx, t);
-      if (n.p === 1) { const dur = n.d * env.stepDur; g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(v * 0.5, t + dur * 0.98); g.gain.linearRampToValueAtTime(0, t + dur + 0.02); s.connect(hp); hp.connect(g); g.connect(out); done(env, [s], t + dur + 0.04, out); }
-      else { const bp = filt(ctx, 'peaking', 9000, 1); bp.gain.value = 6; g.gain.linearRampToValueAtTime(v * 0.45, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8); s.connect(hp); hp.connect(bp); bp.connect(g); g.connect(out); done(env, [s], t + 1.85, out); }
+      // Warm analog reverse swell / tape splash (dark 909-style metallic wash, no brittle digital sizzle)
+      const s = noiseSrc(env, t, true);
+      if (n.p === 1) {
+        // Reverse swell into drop
+        const dur = n.d * env.stepDur;
+        const bp = filt(ctx, 'bandpass', 1200, 1.2);
+        bp.frequency.setValueAtTime(350, t);
+        bp.frequency.exponentialRampToValueAtTime(2600, t + dur);
+        const tapeLp = filt(ctx, 'lowpass', 4500, 0.7);
+        const g = gz(ctx, t);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.exponentialRampToValueAtTime(v * 0.42, t + dur * 0.98);
+        g.gain.linearRampToValueAtTime(0, t + dur + 0.02);
+        s.connect(bp); bp.connect(tapeLp); tapeLp.connect(g); g.connect(out);
+        done(env, [s], t + dur + 0.04, out);
+      } else {
+        // Dark metallic crash splash with warm tape rolloff
+        const bp = filt(ctx, 'bandpass', 3800, 0.8);
+        const tapeLp = filt(ctx, 'lowpass', 5800, 0.7);
+        const g = gz(ctx, t);
+        g.gain.linearRampToValueAtTime(v * 0.32, t + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+        s.connect(bp); bp.connect(tapeLp); tapeLp.connect(g); g.connect(out);
+        done(env, [s], t + 1.45, out);
+      }
       break;
     }
   }

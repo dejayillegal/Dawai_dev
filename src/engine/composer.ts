@@ -406,23 +406,37 @@ export function addTransition(tracks: Track[], style: StyleDef, B: number, delta
   const T = (id: string) => tracks.find((t) => t.layer === id);
   const kind = force ?? (delta > 0.25 ? 'up' : delta < -0.2 ? 'down' : 'mid');
   const used = new Set<string>();
+  const isHypnotic = style.id === 'hypnotic' || style.id === 'minimal_groover' || style.id === 'mental_tribal';
+
   if (kind === 'up') {
-    const rb = Math.max(2, Math.min(8, Math.floor(room)));
-    atomClip(T('RISER'), B - rb, rb, 60, 0.85, 'Riser Atom');
+    const rb = isHypnotic ? Math.min(4, Math.floor(room)) : Math.max(2, Math.min(8, Math.floor(room)));
+    atomClip(T('RISER'), B - rb, rb, 60, isHypnotic ? 0.55 : 0.85, 'Riser Atom');
     const fb = Math.max(1, Math.min(2, Math.floor(room)));
-    fillOn(tracks, ['SNARE', 'CLAP', 'PERC1', 'HAT_C'], B - fb, fb, rng, 'Snare Roll', used);
-    fillOn(tracks, ['TOM', 'PERC1', 'CONGA', 'PERC2'], B - fb, fb, rng, 'Perc Roll', used);
+    if (isHypnotic) {
+      // In hypnotic techno, use dark tom/conga rolls instead of aggressive snare rolls
+      fillOn(tracks, ['TOM', 'CONGA', 'PERC1', 'PERC2'], B - fb, fb, rng, 'Tribal Roll', used);
+    } else {
+      fillOn(tracks, ['SNARE', 'CLAP', 'PERC1', 'HAT_C'], B - fb, fb, rng, 'Snare Roll', used);
+      fillOn(tracks, ['TOM', 'PERC1', 'CONGA', 'PERC2'], B - fb, fb, rng, 'Perc Roll', used);
+    }
     const vb = Math.min(style.void, Math.max(1, Math.floor(room)));
     for (const id of FOUNDATION) { const t = T(id); if (t) carve(t, B - vb, B); }
-    atomClip(T('CRASH'), B - 1, 1, 1, 0.8, 'Reverse Swell', 16);
-    atomClip(T('IMPACT'), B, 2, 60, 1, 'Sub Impact', 16);
-    const cr = T('CRASH'); if (cr) { carve(cr, B, B + 2); cr.clips.push(mkClip(B, 2, 32, [{ t: 0, d: 16, p: 0, v: 0.85 }], 'Crash')); }
+    atomClip(T('CRASH'), B - 1, 1, 1, isHypnotic ? 0.48 : 0.8, 'Reverse Swell', 16);
+    atomClip(T('IMPACT'), B, 2, 60, isHypnotic ? 0.75 : 1, 'Sub Impact', 16);
+    const cr = T('CRASH');
+    if (cr && !isHypnotic) {
+      carve(cr, B, B + 2);
+      cr.clips.push(mkClip(B, 2, 32, [{ t: 0, d: 16, p: 0, v: 0.85 }], 'Crash'));
+    }
   } else if (kind === 'down') {
-    atomClip(T('DOWNLIFT'), B, 4, 60, 0.8, 'Downlifter + Noise Wash', 64);
-    const im = T('IMPACT'); if (im) atomClip(im, B, 1, 60, 0.55, 'Soft Impact', 16);
+    atomClip(T('DOWNLIFT'), B, 4, 60, isHypnotic ? 0.52 : 0.8, 'Downlifter + Noise Wash', 64);
+    const im = T('IMPACT'); if (im) atomClip(im, B, 1, 60, isHypnotic ? 0.42 : 0.55, 'Soft Impact', 16);
   } else {
-    atomClip(T('IMPACT'), B, 1, 60, 0.5, 'Phrase Hit', 16);
-    if (rng.chance(0.6)) fillOn(tracks, ['PERC1', 'SNARE', 'CLAP', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
+    atomClip(T('IMPACT'), B, 1, 60, isHypnotic ? 0.38 : 0.5, 'Phrase Hit', 16);
+    if (rng.chance(0.6)) {
+      if (isHypnotic) fillOn(tracks, ['TOM', 'CONGA', 'PERC1', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
+      else fillOn(tracks, ['PERC1', 'SNARE', 'CLAP', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
+    }
   }
 }
 
