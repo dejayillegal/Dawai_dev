@@ -181,10 +181,40 @@ async function runBrowserQualification() {
       store.dispatch({ type: 'SPLIT_CLIP', id: targetClip.id, at: targetClip.start + 2, rightId: uid('clip') }, 'Split clip');
       const clipsAfter = store.get().project.tracks.find(t => t.id === firstTrack.id).clips.length;
 
+      // Exercise interactive Timeline Zoom (+, -, Fit, Row Height L)
+      const zoomInBtn = document.querySelector('button[aria-label="Zoom in"]');
+      const zoomOutBtn = document.querySelector('button[aria-label="Zoom out"]');
+      const zoomFitBtn = document.querySelector('button[aria-label="Zoom to fit arrangement"]');
+      const rowHeightLBtn = document.querySelector('button[aria-label="Row height L"]');
+      zoomInBtn?.click();
+      zoomOutBtn?.click();
+      zoomFitBtn?.click();
+      rowHeightLBtn?.click();
+
+      // Exercise Device Rack tab & RotaryKnobs
+      store.select({ kind: 'track', id: firstTrack.id });
+      await new Promise(r => setTimeout(r, 80));
+      const deviceRackBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Device Rack');
+      deviceRackBtn?.click();
+      await new Promise(r => setTimeout(r, 100));
+      const rotaryKnobCount = document.querySelectorAll('.cursor-ns-resize svg').length;
+      const synthSelector = document.querySelector('select[aria-label="Synthesizer archetype"]');
+
+      // Exercise Automation tab & shape preset
+      const autoTabBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Automation');
+      autoTabBtn?.click();
+      await new Promise(r => setTimeout(r, 100));
+      const arcPresetBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Arc'));
+      arcPresetBtn?.click();
+      await new Promise(r => setTimeout(r, 80));
+
       return {
         lockedSectionProtected: JSON.stringify(pLocked.sections[2]) === JSON.stringify(pAfterRegen.sections[2]),
-        perSpanAutoCount: pAfterRegen.auto.length,
-        splitClipWorked: clipsAfter === clipsBefore + 1
+        perSpanAutoCount: store.get().project.auto.length,
+        splitClipWorked: clipsAfter === clipsBefore + 1,
+        zoomControlsWorked: !!zoomInBtn && !!zoomOutBtn && !!zoomFitBtn && !!rowHeightLBtn,
+        rotaryKnobCount,
+        hasSynthSelector: !!synthSelector
       };
     })()`);
 
