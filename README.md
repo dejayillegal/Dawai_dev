@@ -53,7 +53,7 @@ The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk
 ### Automated GitHub Actions APK Generation (`.github/workflows/android-apk.yml`)
 
 On every `push`, `pull_request`, or manual **Run workflow** (`workflow_dispatch`) in GitHub Actions, the **Build Android Debug APK** workflow automatically:
-1. Installs Node.js 24, JDK 21 (Temurin), and the Android SDK (`android-actions/setup-android@v3`).
+1. Configures Node.js 24, JDK 21 (Temurin), and the preinstalled `ubuntu-latest` Android SDK licenses (`$ANDROID_HOME/licenses`).
 2. Runs `npm ci` and `npm run check` (strict TypeScript, 94 Vitest unit/integration tests, and Vite production build).
 3. Runs `npm run android:build` (`npx cap sync android` + `./gradlew assembleDebug`).
 4. Verifies `android/app/build/outputs/apk/debug/app-debug.apk`, computes its SHA-256 hash, posts a build summary table, and uploads the **`aidaw-debug-apk`** artifact (`app-debug.apk`, `aidaw-debug.apk`, and `app-debug.apk.sha256`) to the workflow run summary page (and attaches it to a GitHub Release when pushing a tag).
