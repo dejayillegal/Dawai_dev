@@ -84,17 +84,22 @@ export function TopBar({ onExport, compact }: { onExport: () => void; compact: b
         <div
           className={cn('items-center gap-2 pr-1 cursor-pointer group', compact ? 'hidden sm:flex' : 'flex')}
           onClick={() => setAboutOpen(true)}
-          title="About AIDAW · View App Details & Advanced Icon"
+          title="About AIDAW · Dark Minimalist Geometric Identity & Engine Specs"
         >
-          <img
-            src="/icon.svg"
-            alt="AIDAW App Icon"
-            className="h-7 w-7 rounded-lg shadow-[0_0_10px_rgba(245,158,11,0.35)] ring-1 ring-amber/40 transition-transform group-hover:scale-105 group-hover:shadow-[0_0_14px_rgba(6,182,212,0.5)]"
-          />
+          <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#090b10] p-0.5 shadow-[0_0_12px_rgba(245,158,11,0.38)] ring-1 ring-amber/50 transition-all group-hover:scale-105 group-hover:shadow-[0_0_16px_rgba(6,182,212,0.55)]">
+            <img
+              src="/src/assets/images/aidaw_minimal_geometric_logo_1794230991499.jpg"
+              alt="AIDAW Dark Minimalist Geometric Logo"
+              referrerPolicy="no-referrer"
+              className="h-full w-full rounded-[6px] object-cover"
+            />
+          </div>
           {!compact && (
             <div className="leading-tight">
-              <div className="text-[11px] font-bold tracking-wider text-slate-100 group-hover:text-amber transition-colors">
-                AIDAW
+              <div className="flex items-center gap-0.5 text-[11px] font-black tracking-widest text-slate-100 group-hover:text-amber transition-colors">
+                <span>AI</span>
+                <span className="text-amber">D</span>
+                <span className="text-cyan">AW</span>
               </div>
               <div className="max-w-[120px] truncate text-[8.5px] font-medium text-slate-400" title={p.name}>
                 {p.name}
@@ -334,18 +339,21 @@ export function TopBar({ onExport, compact }: { onExport: () => void; compact: b
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {aboutOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-xl border border-line bg-[#0f1318] p-5 shadow-2xl">
+          <div className="w-full max-w-md rounded-xl border border-line bg-panel p-5 shadow-2xl">
             <div className="flex items-start justify-between border-b border-line pb-3">
               <div className="flex items-center gap-3">
                 <img
-                  src="/icon.svg"
-                  alt="AIDAW Advanced App Icon"
-                  className="h-14 w-14 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.4)] ring-2 ring-amber/50"
+                  src="/src/assets/images/aidaw_minimal_geometric_logo_1794230991499.jpg"
+                  alt="AIDAW Dark Minimalist Geometric App Icon"
+                  referrerPolicy="no-referrer"
+                  className="h-14 w-14 rounded-2xl object-cover shadow-[0_0_22px_rgba(245,158,11,0.45)] ring-2 ring-amber/60"
                 />
                 <div>
-                  <h2 className="text-base font-bold tracking-wider text-slate-100">AIDAW</h2>
+                  <h2 className="text-base font-black tracking-widest text-slate-100">
+                    AI<span className="text-amber">D</span><span className="text-cyan">AW</span>
+                  </h2>
                   <p className="text-[11px] font-medium text-amber">AI-Native Underground Techno DAW</p>
-                  <p className="text-[9.5px] text-slate-400">PWA &amp; Native Mobile Ready · v1.0.0</p>
+                  <p className="text-[9.5px] text-slate-400">Dark Minimalist Geometric Edition · PWA &amp; Android Ready</p>
                 </div>
               </div>
               <button
@@ -358,23 +366,23 @@ export function TopBar({ onExport, compact }: { onExport: () => void; compact: b
             <div className="mt-4 space-y-3 text-xs leading-relaxed text-slate-300">
               <div className="rounded-lg border border-line bg-elev/50 p-3">
                 <div className="text-[10.5px] font-semibold uppercase tracking-wider text-cyan mb-1">
-                  Advanced App Identity &amp; PWA Suite
+                  Sonic Monolith Identity &amp; Synthesis Architecture
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
-                  <li>Obsidian dark glass 3D rotary encoder icon geometry</li>
-                  <li>Multi-resolution PWA icons (192px, 512px, Maskable)</li>
-                  <li>iOS Apple Touch Icon &amp; Crisp Vector SVG Browser Favicon</li>
-                  <li>Capacitor Android native asset bundle pre-packaged</li>
+                  <li>Crystalline Sonic Monolith &amp; Acoustic Prism &ldquo;A&rdquo; Brand Emblem</li>
+                  <li>Distinct TB-303 Acid, Warehouse Formant Chord Stab &amp; Buchla FM Pluck</li>
+                  <li>Dark Underground, Horror Vault &amp; Cinematic Dark Modes for All Styles</li>
+                  <li>Ableton Live Set (<code>.als</code>) GZIP/XML Project Import &amp; Export</li>
                 </ul>
               </div>
               <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div className="rounded border border-line bg-[#151a22] p-2">
-                  <span className="block font-semibold text-slate-200">Synthesis Engine</span>
-                  <span className="text-slate-400">TB-303, Sub Boom, Pluck, FM Lead</span>
+                <div className="rounded border border-line bg-elev p-2">
+                  <span className="block font-semibold text-slate-200">Transition FX Suite</span>
+                  <span className="text-slate-400">Turbine Riser, Seismic Sub Impact, Metallic Crash, Brass Downlift</span>
                 </div>
-                <div className="rounded border border-line bg-[#151a22] p-2">
-                  <span className="block font-semibold text-slate-200">Sidechain DSP</span>
-                  <span className="text-slate-400">AudioWorklet 42Hz IPC Metering</span>
+                <div className="rounded border border-line bg-elev p-2">
+                  <span className="block font-semibold text-slate-200">Realtime Audio Engine</span>
+                  <span className="text-slate-400">Click-Free ADSR, Zero-Oversample DSP &amp; Sidechain Worklet</span>
                 </div>
               </div>
             </div>

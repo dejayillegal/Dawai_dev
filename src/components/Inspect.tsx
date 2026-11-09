@@ -10,6 +10,14 @@ import { SidechainPanel } from './Sidechain';
 import { actRegenSection } from '../engine/assist';
 import { totalBars } from '../engine/types';
 import { exportClipToMidi } from '../engine/midiExport';
+import { settingsStore, useSettings } from '../engine/settings';
+import {
+  applyDevicePresetToTrackPatch,
+  deleteDevicePreset,
+  loadDevicePresets,
+  saveDevicePreset,
+  type DevicePreset,
+} from '../engine/presets';
 
 const ALL_SYNTHS: { id: SynthKind; label: string; cat: string }[] = [
   { id: 'kick', label: '909 / Industrial Kick', cat: 'Drums & Low' },
@@ -164,11 +172,17 @@ function AutoFilterPlot({
 
 export function MasterDevice() {
   const app = useApp();
+  const settings = useSettings();
   const p = app.project;
   const P = p.params;
   const cv = useRef<HTMLCanvasElement>(null);
   const setParam = (patch: Partial<typeof P>, key: string) =>
     store.dispatch({ type: 'SET_PARAMS', patch }, `Master · ${key}`, 'user', `master:${key}`);
+
+  const eqLow = settings.eqLow ?? 0;
+  const eqMid = settings.eqMid ?? 0;
+  const eqHigh = settings.eqHigh ?? 0;
+  const isEqFlat = Math.abs(eqLow) < 0.05 && Math.abs(eqMid) < 0.05 && Math.abs(eqHigh) < 0.05;
 
   useEffect(() => {
     let raf = 0;
@@ -177,13 +191,16 @@ export function MasterDevice() {
       const c = cv.current;
       if (c) {
         const g = c.getContext('2d')!;
+        const W = c.width;
+        const H = c.height;
         g.fillStyle = '#090c10';
-        g.fillRect(0, 0, c.width, c.height);
+        g.fillRect(0, 0, W, H);
         g.strokeStyle = '#19202a';
+        g.lineWidth = 1;
         for (let i = 1; i < 4; i++) {
           g.beginPath();
-          g.moveTo(0, (c.height * i) / 4);
-          g.lineTo(c.width, (c.height * i) / 4);
+          g.moveTo(0, (H * i) / 4);
+          g.lineTo(W, (H * i) / 4);
           g.stroke();
         }
         const a = engine.graph?.analyser;
@@ -194,12 +211,61 @@ export function MasterDevice() {
             const idx = Math.floor(Math.pow(i / n, 2.2) * 400) + 1;
             const v = data[idx] / 255;
             g.fillStyle = i < 28 ? '#f59e0b' : i < 64 ? '#06b6d4' : '#a78bfa';
-            g.fillRect((i / n) * c.width, c.height * (1 - v), c.width / n - 1, c.height * v);
+            g.fillRect((i / n) * W, H * (1 - v), W / n - 1, H * v);
           }
         } else {
           g.fillStyle = '#64748b';
           g.font = '10px Inter, sans-serif';
-          g.fillText('Press Play (▶) to view real-time 96-band FFT Master Spectrum', 10, 44);
+          g.fillText('Press Play (▶) for real-time 96-band FFT · Live 3-Band EQ curve active', 10, H - 10);
+        }
+
+        // Draw 3-Band Master EQ composite frequency response curve (Pre-Limiter)
+        const st = settingsStore.get();
+        const lowDb = st.eqLow ?? 0;
+        const midDb = st.eqMid ?? 0;
+        const highDb = st.eqHigh ?? 0;
+        const midY = H * 0.5;
+
+        // 0 dB reference line
+        g.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+        g.setLineDash([3, 3]);
+        g.beginPath();
+        g.moveTo(0, midY);
+        g.lineTo(W, midY);
+        g.stroke();
+        g.setLineDash([]);
+
+        // Composite Low Shelf (x ~ 0.18), Mid Bell (x ~ 0.50), High Shelf (x ~ 0.82)
+        g.beginPath();
+        for (let x = 0; x <= W; x += 2) {
+          const norm = x / W;
+          const lowResp = lowDb / (1 + Math.exp((norm - 0.24) * 14));
+          const midResp = midDb * Math.exp(-Math.pow((norm - 0.5) / 0.17, 2));
+          const highResp = highDb / (1 + Math.exp(-(norm - 0.76) * 14));
+          const totalDb = Math.max(-14, Math.min(14, lowResp + midResp + highResp));
+          const y = midY - (totalDb / 14) * (H * 0.42);
+          if (x === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.strokeStyle = '#38bdf8';
+        g.lineWidth = 2;
+        g.stroke();
+
+        // Band handles
+        const bands = [
+          { x: W * 0.16, db: lowDb, color: '#f59e0b' },
+          { x: W * 0.5, db: midDb, color: '#06b6d4' },
+          { x: W * 0.84, db: highDb, color: '#a78bfa' },
+        ];
+        for (const b of bands) {
+          const by = midY - (b.db / 14) * (H * 0.42);
+          g.beginPath();
+          g.arc(b.x, by, 3.5, 0, Math.PI * 2);
+          g.fillStyle = b.color;
+          g.fill();
+          g.strokeStyle = '#090c10';
+          g.lineWidth = 1.2;
+          g.stroke();
         }
       }
       raf = requestAnimationFrame(f);
@@ -238,16 +304,104 @@ export function MasterDevice() {
   return (
     <div className="space-y-2.5 p-2.5">
       <DeviceModule
-        title="Master Bus · Spectrum & Limiter"
+        title="Master Bus · 3-Band EQ, Spectrum & Limiter"
         category="Mastering Suite"
         color="#f59e0b"
         right={<Badge color="#f59e0b">{P.mode.toUpperCase()}</Badge>}
       >
-        <canvas ref={cv} width={320} height={80} className="mb-2 h-20 w-full rounded border border-line bg-[#090c10]" />
+        <canvas ref={cv} width={320} height={84} className="mb-2 h-21 w-full rounded border border-line bg-[#090c10]" />
         <div className="mb-2 text-[10px] text-slate-400">
           Signal path: <b className="text-slate-200">DJ High-Pass (20Hz–1.8kHz)</b> →{' '}
-          <b className="text-slate-200">2× Oversampled WaveShaper Saturator</b> →{' '}
-          <b className="text-slate-200">Brickwall Limiter (−4 dB, 20:1)</b>
+          <b className="text-cyan">3-Band Master EQ (Low/Mid/High)</b> →{' '}
+          <b className="text-slate-200">Brickwall Limiter ({settings.limiterCeiling.toFixed(1)} dB)</b> →{' '}
+          <b className="text-slate-200">WaveShaper Saturator</b>
+        </div>
+
+        {/* 3-Band Master EQ (Pre-Limiter Spectral Shaping) */}
+        <div className="mb-2.5 rounded border border-line bg-[#0c1015] p-2">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-200">
+                3-Band Master EQ <span className="text-[9px] font-normal text-cyan">(Pre-Limiter Spectral Shaping)</span>
+              </div>
+              <div className="text-[8.5px] text-slate-400">
+                Low Shelf 110 Hz · Mid Peak 1.0 kHz (Q 0.85) · High Shelf 6.5 kHz
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Btn
+                small
+                active={isEqFlat}
+                onClick={() => settingsStore.set({ eqLow: 0, eqMid: 0, eqHigh: 0 })}
+                title="Reset all 3 EQ bands to 0.0 dB"
+              >
+                Flat 0dB
+              </Btn>
+              <Btn
+                small
+                onClick={() => settingsStore.set({ eqLow: 3.0, eqMid: -1.5, eqHigh: 2.5 })}
+                title="Club Sub & High Air smile curve"
+              >
+                Sub+Air
+              </Btn>
+              <Btn
+                small
+                onClick={() => settingsStore.set({ eqLow: 2.5, eqMid: 1.0, eqHigh: -2.0 })}
+                title="Warm analog tape roll-off"
+              >
+                Warm
+              </Btn>
+              <Btn
+                small
+                onClick={() => settingsStore.set({ eqLow: 3.5, eqMid: -2.5, eqHigh: -1.5 })}
+                title="Subterranean dark warehouse voicing"
+              >
+                Dark Vault
+              </Btn>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <RotaryKnob
+              label="Low (110Hz)"
+              value={eqLow}
+              min={-12}
+              max={12}
+              step={0.5}
+              defaultValue={0}
+              bipolar
+              color="#f59e0b"
+              onChange={(v) => settingsStore.set({ eqLow: v })}
+              fmt={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}dB`}
+              hint="Master Low Shelf at 110 Hz (pre-limiter sub & kick weight)"
+            />
+            <RotaryKnob
+              label="Mid (1.0kHz)"
+              value={eqMid}
+              min={-12}
+              max={12}
+              step={0.5}
+              defaultValue={0}
+              bipolar
+              color="#06b6d4"
+              onChange={(v) => settingsStore.set({ eqMid: v })}
+              fmt={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}dB`}
+              hint="Master Mid Peaking Bell at 1.0 kHz (Q=0.85 body & vocal presence)"
+            />
+            <RotaryKnob
+              label="High (6.5kHz)"
+              value={eqHigh}
+              min={-12}
+              max={12}
+              step={0.5}
+              defaultValue={0}
+              bipolar
+              color="#a78bfa"
+              onChange={(v) => settingsStore.set({ eqHigh: v })}
+              fmt={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}dB`}
+              hint="Master High Shelf at 6.5 kHz (hats, air & transient shimmer)"
+            />
+          </div>
         </div>
 
         <div className="mb-2.5">
@@ -386,10 +540,10 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
         ? p.tracks.find((t) => t.id === sel.track)
         : p.tracks[0];
 
-  if (sel.kind === 'device' && sel.id !== 'master') {
+  if (sel.kind === 'device') {
     return (
       <div className="h-full overflow-y-auto bg-bg">
-        <SidechainPanel group={sel.id} />
+        {sel.id === 'master' ? <MasterDevice /> : <SidechainPanel group={sel.id} />}
       </div>
     );
   }
@@ -447,22 +601,25 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg">
-      {/* Track Device Chain Selector Bar */}
-      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line bg-panel px-2.5 py-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Track Chain:</span>
-        {p.tracks.map((trk) => (
-          <button
-            key={trk.id}
-            type="button"
-            onClick={() => store.select({ kind: 'track', id: trk.id })}
-            className={`flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors ${
-              trk.id === t.id ? 'border-amber bg-amber/15 text-amber' : 'border-line bg-elev text-slate-300 hover:text-white'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full" style={{ background: trk.color }} />
-            <span>{trk.name}</span>
-          </button>
-        ))}
+      {/* Track Device Chain Selector + Preset Management Bar */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-2.5 py-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Track Chain:</span>
+          {p.tracks.map((trk) => (
+            <button
+              key={trk.id}
+              type="button"
+              onClick={() => store.select({ kind: 'track', id: trk.id })}
+              className={`flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                trk.id === t.id ? 'border-amber bg-amber/15 text-amber' : 'border-line bg-elev text-slate-300 hover:text-white'
+              }`}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: trk.color }} />
+              <span>{trk.name}</span>
+            </button>
+          ))}
+        </div>
+        <DevicePresetManager track={t} compact />
       </div>
 
       {/* Horizontal Ableton Device Modules */}
@@ -771,6 +928,223 @@ export function DeviceRack({ onOpenAuto }: { onOpenAuto?: () => void }) {
   );
 }
 
+function DevicePresetManager({ track, compact = false }: { track: Track; compact?: boolean }) {
+  const settings = useSettings();
+  const [presets, setPresets] = useState<DevicePreset[]>(() => loadDevicePresets());
+  const [selectedId, setSelectedId] = useState<string>(() => {
+    const list = loadDevicePresets();
+    const match = list.find((p) => p.track.synth === track.synth);
+    return match?.id ?? list[0]?.id ?? '';
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const selectedPreset = presets.find((p) => p.id === selectedId) ?? presets[0];
+
+  const applyPreset = (preset: DevicePreset | undefined) => {
+    if (!preset || track.lock) return;
+    store.dispatch(
+      {
+        type: 'SET_TRACK',
+        id: track.id,
+        patch: applyDevicePresetToTrackPatch(preset),
+      },
+      `Preset · ${preset.name}`
+    );
+    settingsStore.set({
+      eqLow: preset.eq.eqLow,
+      eqMid: preset.eq.eqMid,
+      eqHigh: preset.eq.eqHigh,
+    });
+    setStatusMsg(`Loaded "${preset.name}"`);
+    setTimeout(() => setStatusMsg(null), 2200);
+  };
+
+  const handleSave = () => {
+    const nameToSave = presetName.trim() || `${track.name} · ${track.synth.toUpperCase()}`;
+    const saved = saveDevicePreset(
+      nameToSave,
+      track,
+      {
+        eqLow: settings.eqLow,
+        eqMid: settings.eqMid,
+        eqHigh: settings.eqHigh,
+      },
+      'Custom'
+    );
+    const updated = loadDevicePresets();
+    setPresets(updated);
+    setSelectedId(saved.id);
+    setPresetName('');
+    setIsSaving(false);
+    setStatusMsg(`Saved "${saved.name}"`);
+    setTimeout(() => setStatusMsg(null), 2200);
+  };
+
+  const handleDelete = () => {
+    if (!selectedPreset || selectedPreset.builtIn) return;
+    const updated = deleteDevicePreset(selectedPreset.id);
+    setPresets(updated);
+    setSelectedId(updated[0]?.id ?? '');
+    setStatusMsg(`Deleted preset`);
+    setTimeout(() => setStatusMsg(null), 2000);
+  };
+
+  if (compact) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-cyan-300">Rack Preset:</span>
+        <select
+          aria-label="Device Rack Preset"
+          value={selectedId}
+          disabled={track.lock}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedId(id);
+            const found = presets.find((p) => p.id === id);
+            if (found) applyPreset(found);
+          }}
+          className="h-6 rounded border border-line bg-elev px-1.5 text-[10px] font-medium text-slate-100"
+        >
+          {presets.map((pr) => (
+            <option key={pr.id} value={pr.id}>
+              {pr.builtIn ? `[${pr.category}] ` : '★ [User] '}
+              {pr.name}
+            </option>
+          ))}
+        </select>
+        <Btn
+          small
+          tone="cyan"
+          disabled={track.lock || !selectedPreset}
+          onClick={() => applyPreset(selectedPreset)}
+          title="Apply selected preset (Synth, Filter Cutoff/Res, Reverb/Delay Sends & 3-Band EQ)"
+        >
+          Load
+        </Btn>
+        {!isSaving ? (
+          <Btn
+            small
+            tone="amber"
+            disabled={track.lock}
+            onClick={() => {
+              setPresetName(`${track.name} Custom`);
+              setIsSaving(true);
+            }}
+            title="Save current track Filter, Sends, Synth & EQ configuration as a preset"
+          >
+            + Save Preset
+          </Btn>
+        ) : (
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              aria-label="New preset name"
+              placeholder="Preset name..."
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSave();
+                if (e.key === 'Escape') setIsSaving(false);
+              }}
+              className="h-6 w-32 rounded border border-amber/60 bg-[#0b0e12] px-1.5 text-[10px] text-slate-100"
+            />
+            <Btn small tone="amber" onClick={handleSave}>
+              Save
+            </Btn>
+            <Btn small tone="ghost" onClick={() => setIsSaving(false)}>
+              ✕
+            </Btn>
+          </div>
+        )}
+        {selectedPreset && !selectedPreset.builtIn && (
+          <Btn small tone="red" onClick={handleDelete} title="Delete custom preset">
+            Del
+          </Btn>
+        )}
+        {statusMsg && <span className="text-[9px] font-medium text-emerald-400">{statusMsg}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-line bg-[#0b0f14] p-2">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+          Device Rack Preset (EQ · Filter · Sends)
+        </span>
+        {statusMsg && <span className="text-[9px] font-medium text-emerald-400">{statusMsg}</span>}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <select
+          aria-label="Track Device Preset"
+          value={selectedId}
+          disabled={track.lock}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSelectedId(id);
+            const found = presets.find((p) => p.id === id);
+            if (found) applyPreset(found);
+          }}
+          className="h-7 flex-1 rounded border border-line bg-elev px-2 text-[11px] font-medium text-slate-100"
+        >
+          {presets.map((pr) => (
+            <option key={pr.id} value={pr.id}>
+              {pr.builtIn ? `[${pr.category}] ` : '★ [User] '}
+              {pr.name}
+            </option>
+          ))}
+        </select>
+        <Btn small tone="cyan" disabled={track.lock || !selectedPreset} onClick={() => applyPreset(selectedPreset)}>
+          Load
+        </Btn>
+        {selectedPreset && !selectedPreset.builtIn && (
+          <Btn small tone="red" onClick={handleDelete}>
+            Del
+          </Btn>
+        )}
+      </div>
+      {selectedPreset && (
+        <div className="mt-1.5 flex flex-wrap gap-1 text-[9px] font-mono text-slate-400">
+          <span className="rounded bg-[#131922] px-1.5 py-0.5 text-slate-300">
+            SYNTH: {selectedPreset.track.synth}
+          </span>
+          <span className="rounded bg-[#131922] px-1.5 py-0.5 text-cyan-300">
+            CUT/RES: {Math.round(selectedPreset.track.cutoff * 100)}%/{Math.round(selectedPreset.track.res * 100)}%
+          </span>
+          <span className="rounded bg-[#131922] px-1.5 py-0.5 text-violet-300">
+            REV/DEL: {Math.round(selectedPreset.track.rev * 100)}%/{Math.round(selectedPreset.track.del * 100)}%
+          </span>
+          <span className="rounded bg-[#131922] px-1.5 py-0.5 text-amber">
+            EQ: {selectedPreset.eq.eqLow >= 0 ? '+' : ''}
+            {selectedPreset.eq.eqLow}/{selectedPreset.eq.eqMid >= 0 ? '+' : ''}
+            {selectedPreset.eq.eqMid}/{selectedPreset.eq.eqHigh >= 0 ? '+' : ''}
+            {selectedPreset.eq.eqHigh}dB
+          </span>
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-1.5">
+        <input
+          type="text"
+          aria-label="Save preset name"
+          placeholder={`Save current (${track.name}) as preset...`}
+          value={presetName}
+          disabled={track.lock}
+          onChange={(e) => setPresetName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSave();
+          }}
+          className="h-7 flex-1 rounded border border-line bg-elev px-2 text-[11px] text-slate-100"
+        />
+        <Btn small tone="amber" disabled={track.lock} onClick={handleSave}>
+          Save Preset
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 export function Inspect() {
   const app = useApp();
   const p = app.project;
@@ -971,6 +1345,7 @@ export function Inspect() {
               ))}
             </select>
           </label>
+          <DevicePresetManager track={t} />
         </Section>
 
         <Section title="Auto Filter · Tone & Sends">

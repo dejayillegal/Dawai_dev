@@ -1,164 +1,82 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <!-- Background Dark Obsidian Glass Gradient -->
-    <linearGradient id="obsidianBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#141a22"/>
-      <stop offset="50%" stop-color="#0e1217"/>
-      <stop offset="100%" stop-color="#07090c"/>
+    <!-- Deep Matte Obsidian Background -->
+    <radialGradient id="obsidianBg" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#141820"/>
+      <stop offset="60%" stop-color="#0b0e13"/>
+      <stop offset="100%" stop-color="#06080b"/>
+    </radialGradient>
+
+    <!-- Brushed Dark Titanium Left Facet (Warm Amber Rim) -->
+    <linearGradient id="leftFacet" x1="0%" y1="100%" x2="80%" y2="0%">
+      <stop offset="0%" stop-color="#78350f"/>
+      <stop offset="35%" stop-color="#27201c"/>
+      <stop offset="75%" stop-color="#1e242d"/>
+      <stop offset="100%" stop-color="#333d4b"/>
     </linearGradient>
 
-    <!-- Outer Chamfer Bevel Ring Gradient -->
-    <linearGradient id="bevelBorder" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b4859" stop-opacity="0.8"/>
-      <stop offset="50%" stop-color="#1a212b" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#0b0e12" stop-opacity="0.9"/>
-    </linearGradient>
-
-    <!-- Warm Amber Glow Gradient -->
-    <linearGradient id="amberGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f59e0b"/>
-      <stop offset="100%" stop-color="#d97706"/>
-    </linearGradient>
-
-    <!-- Electric Cyan Glow Gradient -->
-    <linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#06b6d4"/>
+    <!-- Brushed Dark Titanium Right Facet (Cyber Cyan Rim) -->
+    <linearGradient id="rightFacet" x1="20%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#333d4b"/>
+      <stop offset="45%" stop-color="#18222c"/>
+      <stop offset="80%" stop-color="#0e3a47"/>
       <stop offset="100%" stop-color="#0891b2"/>
     </linearGradient>
 
-    <!-- Metallic Brushed Dial Gradient -->
-    <radialGradient id="dialBody" cx="40%" cy="35%" r="65%">
-      <stop offset="0%" stop-color="#2c3645"/>
-      <stop offset="45%" stop-color="#19202a"/>
-      <stop offset="85%" stop-color="#11161d"/>
-      <stop offset="100%" stop-color="#0a0d12"/>
-    </radialGradient>
-
-    <!-- Inner Dial Rim Gradient -->
-    <linearGradient id="dialRim" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#475569"/>
-      <stop offset="50%" stop-color="#1e293b"/>
-      <stop offset="100%" stop-color="#0f172a"/>
+    <!-- Inner Bevel Shadow Facet -->
+    <linearGradient id="innerDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1319"/>
+      <stop offset="100%" stop-color="#07090d"/>
     </linearGradient>
 
-    <!-- Glass Reflection Gradient -->
-    <linearGradient id="glassReflect" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
-      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.04"/>
-      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.0"/>
+    <!-- Horizontal Acoustic Pulse Rim Gradient -->
+    <linearGradient id="pulseRim" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.9"/>
+      <stop offset="48%" stop-color="#94a3b8" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#22d3ee" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.9"/>
     </linearGradient>
 
-    <!-- Drop Shadow Filter -->
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.75"/>
-    </filter>
-
-    <!-- Neon Glow Filter -->
-    <filter id="neonAmber" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="neonCyan" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.85"/>
     </filter>
   </defs>
 
-  <!-- Base App Icon Container (Squircle) -->
-  <rect x="8" y="8" width="496" height="496" rx="104" fill="url(#obsidianBg)" filter="url(#shadow)"/>
-  
-  <!-- Metallic Chamfer Rim -->
-  <rect x="14" y="14" width="484" height="484" rx="98" fill="none" stroke="url(#bevelBorder)" stroke-width="4"/>
-  <rect x="22" y="22" width="468" height="468" rx="90" fill="none" stroke="#000000" stroke-opacity="0.5" stroke-width="2"/>
+  <!-- Minimalist Matte Obsidian Icon Canvas -->
+  <rect width="512" height="512" rx="108" fill="url(#obsidianBg)"/>
+  <rect x="10" y="10" width="492" height="492" rx="100" fill="none" stroke="#1e2530" stroke-width="2"/>
 
-  <!-- AI Neural Circuit Trace Background Pattern -->
-  <g opacity="0.35" stroke-width="2" stroke-linecap="round">
-    <!-- Left Circuit Lines (Amber side) -->
-    <path d="M 96 140 L 140 140 L 180 180 M 80 220 L 150 220 M 110 300 L 160 300 L 190 270" stroke="#f59e0b" fill="none"/>
-    <circle cx="96" cy="140" r="4" fill="#f59e0b"/>
-    <circle cx="80" cy="220" r="4" fill="#f59e0b"/>
-    <circle cx="110" cy="300" r="4" fill="#f59e0b"/>
+  <!-- Precision Faceted Geometric "A" Monogram -->
+  <g filter="url(#dropShadow)">
+    <!-- Top Crown Facet -->
+    <polygon points="232,126 280,126 256,184" fill="#3b4454" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.55"/>
+    <polygon points="256,184 280,126 268,214" fill="#13333e"/>
 
-    <!-- Right Circuit Lines (Cyan side) -->
-    <path d="M 416 140 L 372 140 L 332 180 M 432 220 L 362 220 M 402 300 L 352 300 L 322 270" stroke="#06b6d4" fill="none"/>
-    <circle cx="416" cy="140" r="4" fill="#06b6d4"/>
-    <circle cx="432" cy="220" r="4" fill="#06b6d4"/>
-    <circle cx="402" cy="300" r="4" fill="#06b6d4"/>
+    <!-- Upper Left Pillar -->
+    <polygon points="232,126 172,248 206,248 244,158" fill="url(#leftFacet)" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.65"/>
+    <polygon points="244,158 206,248 228,248 256,184" fill="url(#innerDark)"/>
+
+    <!-- Upper Right Pillar -->
+    <polygon points="280,126 268,158 306,248 340,248" fill="url(#rightFacet)" stroke="#06b6d4" stroke-width="1.2" stroke-opacity="0.6"/>
+    <polygon points="256,184 284,248 306,248 268,158" fill="#141c24"/>
+
+    <!-- Lower Left Leg -->
+    <polygon points="162,268 104,384 152,384 196,268" fill="url(#leftFacet)" stroke="#f59e0b" stroke-width="1.4" stroke-opacity="0.75"/>
+    <!-- Lower Left Cyan-Tinted Inner Bevel Toe -->
+    <polygon points="104,384 152,384 176,384 194,340 156,340" fill="#102a35" stroke="#06b6d4" stroke-width="1" stroke-opacity="0.45"/>
+
+    <!-- Lower Right Leg -->
+    <polygon points="316,268 350,268 408,384 360,384" fill="url(#rightFacet)" stroke="#06b6d4" stroke-width="1.4" stroke-opacity="0.8"/>
+    <!-- Lower Right Amber-Tinted Inner Bevel Toe -->
+    <polygon points="316,268 360,384 336,384 294,300" fill="#231c18" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.4"/>
+
+    <!-- Recessed Geometric Crossbar -->
+    <polygon points="218,298 294,298 310,334 182,334" fill="#232a35" stroke="#334155" stroke-width="1"/>
+
+    <!-- Razor-Sharp Horizontal Acoustic Pulse Line -->
+    <polygon points="74,256 234,250 244,274 256,198 266,304 276,240 282,258 438,256 280,264 274,252 266,318 256,220 244,286 236,262"
+      fill="#1b222c" stroke="url(#pulseRim)" stroke-width="2" stroke-linejoin="miter"/>
   </g>
-
-  <!-- Waveform Audio Pulses (Left & Right Flanks) -->
-  <g filter="url(#neonAmber)">
-    <!-- Amber Waveform (Left) -->
-    <path d="M 54 220 Q 80 160, 106 220 T 158 220" fill="none" stroke="#f59e0b" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>
-    <path d="M 64 220 Q 95 180, 126 220 T 148 220" fill="none" stroke="#fbbf24" stroke-width="2" opacity="0.6"/>
-  </g>
-
-  <g filter="url(#neonCyan)">
-    <!-- Cyan Waveform (Right) -->
-    <path d="M 354 220 Q 406 160, 432 220 T 458 220" fill="none" stroke="#06b6d4" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>
-    <path d="M 364 220 Q 417 180, 438 220 T 448 220" fill="none" stroke="#22d3ee" stroke-width="2" opacity="0.6"/>
-  </g>
-
-  <!-- Central Rotary Encoder & LED Halo Rings -->
-  <!-- Outer Ring Backdrop Track -->
-  <circle cx="256" cy="216" r="126" fill="#090c10" stroke="#1c2430" stroke-width="6"/>
-
-  <!-- Glowing LED Arc Indicators (Amber 135°-270°, Cyan 270°-405°) -->
-  <!-- Amber Arc Left -->
-  <path d="M 167 305 A 126 126 0 0 1 256 90" fill="none" stroke="url(#amberGlow)" stroke-width="10" stroke-linecap="round" filter="url(#neonAmber)"/>
-  <!-- Cyan Arc Right -->
-  <path d="M 256 90 A 126 126 0 0 1 345 305" fill="none" stroke="url(#cyanGlow)" stroke-width="10" stroke-linecap="round" filter="url(#neonCyan)"/>
-
-  <!-- Dial Base Shadow & Metallic Body -->
-  <circle cx="256" cy="216" r="102" fill="url(#dialBody)" stroke="url(#dialRim)" stroke-width="4" filter="url(#shadow)"/>
-  <circle cx="256" cy="216" r="92" fill="none" stroke="#2a3545" stroke-width="1.5"/>
-
-  <!-- Dial Knurled Ridges Notch Ring -->
-  <g opacity="0.4" stroke="#475569" stroke-width="2">
-    <line x1="256" y1="124" x2="256" y2="130"/>
-    <line x1="321" y1="151" x2="316" y2="156"/>
-    <line x1="348" y1="216" x2="342" y2="216"/>
-    <line x1="321" y1="281" x2="316" y2="276"/>
-    <line x1="191" y1="151" x2="196" y2="156"/>
-    <line x1="164" y1="216" x2="170" y2="216"/>
-    <line x1="191" y1="281" x2="196" y2="276"/>
-  </g>
-
-  <!-- Active Knob Position Indicator Needle (Pointer angled to ~330° Cyan sector) -->
-  <line x1="256" y1="216" x2="298" y2="144" stroke="#22d3ee" stroke-width="4.5" stroke-linecap="round" filter="url(#neonCyan)"/>
-  <circle cx="256" cy="216" r="8" fill="#0f172a" stroke="#22d3ee" stroke-width="2"/>
-
-  <!-- Frequency Spectrum Bars (Bottom Control Area) -->
-  <g transform="translate(106, 350)">
-    <!-- Left Amber Bars -->
-    <rect x="0" y="24" width="10" height="24" rx="3" fill="#f59e0b"/>
-    <rect x="14" y="14" width="10" height="34" rx="3" fill="#f59e0b"/>
-    <rect x="28" y="4" width="10" height="44" rx="3" fill="#fbbf24" filter="url(#neonAmber)"/>
-    <rect x="42" y="18" width="10" height="30" rx="3" fill="#f59e0b"/>
-    <rect x="56" y="8" width="10" height="40" rx="3" fill="#d97706"/>
-
-    <!-- Center Separator -->
-    <circle cx="150" cy="28" r="3" fill="#475569"/>
-
-    <!-- Right Cyan Bars -->
-    <rect x="234" y="10" width="10" height="38" rx="3" fill="#0891b2"/>
-    <rect x="248" y="20" width="10" height="28" rx="3" fill="#06b6d4"/>
-    <rect x="262" y="2" width="10" height="46" rx="3" fill="#22d3ee" filter="url(#neonCyan)"/>
-    <rect x="276" y="14" width="10" height="34" rx="3" fill="#06b6d4"/>
-    <rect x="290" y="26" width="10" height="22" rx="3" fill="#0891b2"/>
-  </g>
-
-  <!-- Illuminated AIDAW Logo Text -->
-  <text x="256" y="440" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="34" fill="#e2e8f0" letter-spacing="10" text-anchor="middle">
-    AI<tspan fill="#06b6d4">DAW</tspan>
-  </text>
-
-  <!-- Top Curved Glass Reflection Light Flare -->
-  <path d="M 28 28 L 484 28 C 484 28, 440 180, 256 180 C 72 180, 28 28, 28 28 Z" fill="url(#glassReflect)"/>
 </svg>
+
+

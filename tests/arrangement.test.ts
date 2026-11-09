@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {generate,defaultParams,newProject,mergeGenerated,regenSection} from '../src/engine/composer';
+import {generate,defaultParams,newProject,mergeGenerated,regenSection,createAmbientTechnoTemplate} from '../src/engine/composer';
 import {totalBars} from '../src/engine/types';
 import {STYLES} from '../src/engine/styles';
 it('honors requested exact lengths across all styles and seeds',()=>{
@@ -47,3 +47,26 @@ it('splices automation lanes per-span so unlocked sections update while locked s
  const updatedLane=r.auto.find(a=>a.id===lane.id)!;
  expect(updatedLane.pts.some(pt=>pt.bar>=unlockedSec.start&&pt.bar<unlockedSec.start+unlockedSec.bars&&pt.v!==0.123)).toBe(true);
 });
+it('creates the Ambient Techno project template with longer loop phrases and prioritized PAD and DRONE layers',()=>{
+ const p=createAmbientTechnoTemplate(2049);
+ expect(p.params.style).toBe('ambient');
+ expect(p.formId).toBe('ambient');
+ const pad=p.tracks.find(t=>t.layer==='PAD');
+ const drone=p.tracks.find(t=>t.layer==='DRONE');
+ expect(pad).toBeDefined();
+ expect(drone).toBeDefined();
+ // PAD and DRONE enter immediately at bar 0 in Ambient Techno and use long loop phrases
+ expect(pad!.clips[0].start).toBe(0);
+ expect(drone!.clips[0].start).toBe(0);
+ expect(pad!.clips[0].loop).toBeGreaterThanOrEqual(128);
+ expect(drone!.clips[0].loop).toBeGreaterThanOrEqual(128);
+});
+it('evolves 303 acid and melodic/groove layers across phrases so consecutive clips do not repeat identically',()=>{
+ const p=newProject(defaultParams('acid',707));
+ const acidTrack=p.tracks.find(t=>t.layer==='ACID1')!;
+ expect(acidTrack.clips.length).toBeGreaterThan(2);
+ const sigs=acidTrack.clips.map(c=>c.notes.map(n=>`${n.t}:${n.p}:${n.acc?1:0}:${n.slide?1:0}`).join(','));
+ const uniqueSigs=new Set(sigs);
+ expect(uniqueSigs.size).toBeGreaterThan(1);
+});
+

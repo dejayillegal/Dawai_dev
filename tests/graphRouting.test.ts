@@ -25,3 +25,24 @@ it('changing a kick instrument disconnects detector taps but retains audible rou
  const p=newProject(defaultParams()),g=graph();g.sync(p);const kick=p.tracks.find(t=>t.synth==='kick')!;kick.synth='lead';g.sync(p);
  const s=g.strips.get(kick.id)!,pan=s.pan as unknown as Node;expect(pan.edges.filter(e=>e.input===1)).toHaveLength(0);expect(pan.edges.some(e=>e.node===(s.out as unknown as Node))).toBe(true);g.kill();
 });
+it('routes 3-band Master EQ (Low, Mid, High) in series between DJ HPF and Brickwall Limiter and syncs dB gains',async()=>{
+ const {settingsStore}=await import('../src/engine/settings');
+ settingsStore.set({eqLow:3.5,eqMid:-2.0,eqHigh:2.5});
+ const g=graph();
+ g.syncMasterSettings();
+ const hp=g.hp as unknown as Node;
+ const eqLow=g.eqLow as unknown as Node;
+ const eqMid=g.eqMid as unknown as Node;
+ const eqHigh=g.eqHigh as unknown as Node;
+ const limiter=g.limiter as unknown as Node;
+ expect(hp.edges.some(e=>e.node===eqLow)).toBe(true);
+ expect(eqLow.edges.some(e=>e.node===eqMid)).toBe(true);
+ expect(eqMid.edges.some(e=>e.node===eqHigh)).toBe(true);
+ expect(eqHigh.edges.some(e=>e.node===limiter)).toBe(true);
+ expect(g.eqLow.gain.value).toBe(3.5);
+ expect(g.eqMid.gain.value).toBe(-2.0);
+ expect(g.eqHigh.gain.value).toBe(2.5);
+ settingsStore.set({eqLow:0,eqMid:0,eqHigh:0});
+ g.kill();
+});
+

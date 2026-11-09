@@ -22,7 +22,7 @@ export interface Strip {
   keyConnected: boolean; target: AudioNode; sc: ScGroup | null; synth: SynthKind; last?: { hz: number; end: number };
 }
 
-function makeIR(ctx: BaseAudioContext, seconds = 2.8, seed = 2): AudioBuffer {
+function makeIR(ctx: BaseAudioContext, seconds = 1.6, seed = 2): AudioBuffer {
   const rng = new Rng(seed);
   const sr = ctx.sampleRate; const len = Math.floor(sr * seconds); const b = ctx.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
@@ -40,10 +40,10 @@ function makeIR(ctx: BaseAudioContext, seconds = 2.8, seed = 2): AudioBuffer {
   return b;
 }
 const satCurve = (k: number) => {
-  const c = new Float32Array(new ArrayBuffer(2048 * 4));
+  const c = new Float32Array(new ArrayBuffer(1024 * 4));
   const norm = Math.tanh(k);
-  for (let i = 0; i < 2048; i++) {
-    const x = (i / 2047) * 2 - 1;
+  for (let i = 0; i < 1024; i++) {
+    const x = (i / 1023) * 2 - 1;
     const biased = x + 0.055 * x * x - 0.055;
     c[i] = Math.tanh(biased * k) / norm;
   }
@@ -60,7 +60,7 @@ export function getSharedBuffers(ctx: BaseAudioContext, seed: number): { noise: 
   }
   let pair = bySeed.get(seed);
   if (!pair) {
-    pair = { noise: makeNoise(ctx, seed), ir: makeIR(ctx, 2.8, seed + 1) };
+    pair = { noise: makeNoise(ctx, seed), ir: makeIR(ctx, 1.6, seed + 1) };
     bySeed.set(seed, pair);
   }
   return pair;
@@ -69,7 +69,7 @@ export function getSharedBuffers(ctx: BaseAudioContext, seed: number): { noise: 
 export class Graph {
   seed: number;
   ctx: BaseAudioContext; useWorklet: boolean;
-  preMaster: GainNode; hp: BiquadFilterNode; sat: WaveShaperNode; limiter: DynamicsCompressorNode; master: GainNode; analyser: AnalyserNode;
+  preMaster: GainNode; hp: BiquadFilterNode; eqLow: BiquadFilterNode; eqMid: BiquadFilterNode; eqHigh: BiquadFilterNode; sat: WaveShaperNode; limiter: DynamicsCompressorNode; master: GainNode; analyser: AnalyserNode;
   revIn: GainNode; delIn: GainNode; delay: DelayNode;
   groups = {} as Record<ScGroup, { input: AudioNode; node?: AudioWorkletNode; duck?: GainNode }>;
   strips = new Map<string, Strip>();
@@ -123,11 +123,23 @@ export class Graph {
     const settings = settingsStore.get();
     this.preMaster = ctx.createGain(); this.preMaster.gain.value = 0.35;
     this.hp = ctx.createBiquadFilter(); this.hp.type = 'highpass'; this.hp.frequency.value = 20; this.hp.Q.value = 0.5;
+    // 3-Band Master EQ positioned before the Brickwall Limiter for global spectral shaping
+    this.eqLow = ctx.createBiquadFilter(); this.eqLow.type = 'lowshelf'; this.eqLow.frequency.value = 110; this.eqLow.gain.value = clamp(settings.eqLow ?? 0, -12, 12);
+    this.eqMid = ctx.createBiquadFilter(); this.eqMid.type = 'peaking'; this.eqMid.frequency.value = 1000; this.eqMid.Q.value = 0.85; this.eqMid.gain.value = clamp(settings.eqMid ?? 0, -12, 12);
+    this.eqHigh = ctx.createBiquadFilter(); this.eqHigh.type = 'highshelf'; this.eqHigh.frequency.value = 6500; this.eqHigh.gain.value = clamp(settings.eqHigh ?? 0, -12, 12);
     this.limiter = ctx.createDynamicsCompressor(); this.limiter.threshold.value = settings.limiterCeiling; this.limiter.knee.value = 3; this.limiter.ratio.value = 12; this.limiter.attack.value = 0.003; this.limiter.release.value = 0.10;
-    this.sat = ctx.createWaveShaper(); this.sat.curve = satCurve(0.8 + settings.analogWarmth * 1.2); this.sat.oversample = '2x';
+    this.sat = ctx.createWaveShaper(); this.sat.curve = satCurve(0.8 + settings.analogWarmth * 1.2);
     this.master = ctx.createGain(); this.master.gain.value = 0.85;
-    this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.7;
-    this.preMaster.connect(this.hp); this.hp.connect(this.limiter); this.limiter.connect(this.sat); this.sat.connect(this.master); this.master.connect(this.analyser); this.analyser.connect(ctx.destination);
+    this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 512; this.analyser.smoothingTimeConstant = 0.75;
+    this.preMaster.connect(this.hp);
+    this.hp.connect(this.eqLow);
+    this.eqLow.connect(this.eqMid);
+    this.eqMid.connect(this.eqHigh);
+    this.eqHigh.connect(this.limiter);
+    this.limiter.connect(this.sat);
+    this.sat.connect(this.master);
+    this.master.connect(this.analyser);
+    this.analyser.connect(ctx.destination);
 
     for (const g of GROUPS) {
       if (useWorklet) {
@@ -161,11 +173,11 @@ export class Graph {
     const fb = ctx.createGain(); fb.gain.value = 0.48;
     const fbHp = ctx.createBiquadFilter(); fbHp.type = 'highpass'; fbHp.frequency.value = 185; fbHp.Q.value = 0.65;
     const fbLp = ctx.createBiquadFilter(); fbLp.type = 'lowpass'; fbLp.frequency.value = 2050; fbLp.Q.value = 0.7;
-    const fbSat = ctx.createWaveShaper(); fbSat.curve = satCurve(1.35); fbSat.oversample = '2x';
+    const fbSat = ctx.createWaveShaper(); fbSat.curve = satCurve(1.35);
     const delOut = ctx.createGain(); delOut.gain.value = 0.58;
     this.delIn.connect(this.delay); this.delay.connect(fbHp); fbHp.connect(fbLp); fbLp.connect(fbSat); fbSat.connect(fb); fb.connect(this.delay); fbLp.connect(delOut); delOut.connect(this.preMaster);
     const dToRev = ctx.createGain(); dToRev.gain.value = 0.28; delOut.connect(dToRev); dToRev.connect(this.revIn);
-    this.owned.push(this.preMaster,this.hp,this.sat,this.limiter,this.master,this.analyser,this.revIn,this.delIn,this.delay,conv,revOut,pre,revLp,revHp,fb,fbHp,fbLp,fbSat,delOut,dToRev);
+    this.owned.push(this.preMaster,this.hp,this.eqLow,this.eqMid,this.eqHigh,this.sat,this.limiter,this.master,this.analyser,this.revIn,this.delIn,this.delay,conv,revOut,pre,revLp,revHp,fb,fbHp,fbLp,fbSat,delOut,dToRev);
   }
 
   private createStrip(t: Track): Strip {
@@ -232,12 +244,22 @@ export class Graph {
     const bpm = p.params.bpm; this.env.stepDur = stepDurOf(bpm); this.delay.delayTime.setTargetAtTime(60 / bpm * 0.75, now, 0.05);
     this.env.dirt = clamp(p.params.dirt + (p.params.mode === 'industrial' ? 0.25 : p.params.mode === 'clean' ? -0.15 : 0));
     const st = settingsStore.get();
-    this.limiter.threshold.setTargetAtTime(st.limiterCeiling, now, 0.02);
+    this.syncMasterSettings();
     if (this.mode !== p.params.mode) {
       this.mode = p.params.mode;
       const k = (p.params.mode === 'industrial' ? 2.2 : p.params.mode === 'clean' ? 0.7 : 1.2) * (0.8 + st.analogWarmth * 0.8);
       this.sat.curve = satCurve(k);
     }
+  }
+
+  syncMasterSettings() {
+    if (this.disposed) return;
+    const now = this.ctx.currentTime;
+    const st = settingsStore.get();
+    this.eqLow.gain.setTargetAtTime(clamp(st.eqLow ?? 0, -12, 12), now, 0.015);
+    this.eqMid.gain.setTargetAtTime(clamp(st.eqMid ?? 0, -12, 12), now, 0.015);
+    this.eqHigh.gain.setTargetAtTime(clamp(st.eqHigh ?? 0, -12, 12), now, 0.015);
+    this.limiter.threshold.setTargetAtTime(st.limiterCeiling, now, 0.02);
   }
 
   kill() {
@@ -397,6 +419,11 @@ export class Engine {
   schedMs = 0; onStop?: () => void; onError?: (error:Error)=>void;
 
   constructor() {
+    settingsStore.subscribe(() => {
+      if (this.graph) {
+        this.graph.syncMasterSettings();
+      }
+    });
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       const warmOnce = () => {
         window.removeEventListener('pointerdown', warmOnce, true);
@@ -428,7 +455,10 @@ export class Engine {
     if (!this.ctx) {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-      this.ctx = new AC({ latencyHint: isMobile ? 'balanced' : 'interactive' });
+      const latTarget = settingsStore.get().latencyTarget;
+      const hint: AudioContextLatencyCategory =
+        latTarget === 'stable' ? 'playback' : latTarget === 'balanced' || isMobile ? 'balanced' : 'interactive';
+      this.ctx = new AC({ latencyHint: hint });
     }
     const resume=this.ctx.state!=='running'?this.ctx.resume():Promise.resolve();
     await resume;
@@ -495,17 +525,18 @@ export class Engine {
     this.graph=new Graph(ctx,this.workletOk,this.shared,true,p.params.seed,warmNodes);this.sched=new Scheduler(this.graph);
     this.graph!.sync(p); this.lastProject = p; this.lastAuto = p.auto;
     const range=playbackRange(p,fromBar);
-    const dur = stepDurOf(p.params.bpm); const t0 = ctx.currentTime + (wasWarm ? 0.025 : 0.045); const step = range.start * STEPS_PER_BAR;
+    const dur = stepDurOf(p.params.bpm); const t0 = ctx.currentTime + (wasWarm ? 0.035 : 0.055); const step = range.start * STEPS_PER_BAR;
     this.segs = [{ refStep: step, refTime: t0, dur }]; this.nextStep = step; this.chaseNextWindow=true; this.playing = true;
     try{
       this.sched!.scheduleAutomation(p, range.start, t0, true);
-      const loop = () => {
-        if (!this.playing) return;
-        try { this.tick(); } catch (error) { this.stop(); this.onError?.(error instanceof Error ? error : new Error(String(error))); }
-        if (this.playing) this.tickRaf = requestAnimationFrame(loop);
-      };
-      this.tickRaf = requestAnimationFrame(loop);
-      this.timer = window.setInterval(() => {try{this.tick();}catch(error){this.stop();this.onError?.(error instanceof Error?error:new Error(String(error)));}}, 20);
+      this.timer = window.setInterval(() => {
+        try {
+          this.tick();
+        } catch (error) {
+          this.stop();
+          this.onError?.(error instanceof Error ? error : new Error(String(error)));
+        }
+      }, 45);
       this.tick();
     }catch(error){this.stop();throw error;}
   }

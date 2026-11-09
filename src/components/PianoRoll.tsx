@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { store, useApp } from '../store';
+import { engine, store, useApp } from '../store';
 import type { Note } from '../engine/types';
 import { SCALES, euclid, Rng, KEY_NAMES } from '../engine/theory';
 import { mutate } from '../engine/composer';
@@ -7,10 +7,12 @@ import { newClipAt } from '../actions';
 import { Btn } from '../ui';
 import { cn } from '../utils/cn';
 import { exportClipToMidi } from '../engine/midiExport';
+import { computeAnalyticalClipWaveform, renderOfflineClipWaveform } from '../engine/clipWaveform';
 
 const GUT = 38, RH = 14, VEL_H = 54;
 const SINGLE = ['kick', 'hat', 'ohat', 'ride', 'shaker', 'clap', 'snare', 'clang', 'crackle', 'riser', 'impact', 'downlift', 'crash'];
 type Tool = 'draw' | 'accent' | 'slide' | 'erase';
+type WaveOverlayMode = 'both' | 'grid' | 'notes';
 
 export function PianoRoll() {
   const app = useApp();
@@ -28,6 +30,10 @@ export function PianoRoll() {
   const [snap, setSnap] = useState(1);
   const [draft, setDraft] = useState<Note[] | null>(null);
   const [eu, setEu] = useState({ k: 5, n: 16, rot: 0, pitch: 60 });
+  const [showWaveform, setShowWaveform] = useState(true);
+  const [waveMode, setWaveMode] = useState<WaveOverlayMode>('both');
+  const [offlineWave, setOfflineWave] = useState<{ min: Float32Array; max: Float32Array; rms: Float32Array } | null>(null);
+  const [liveBar, setLiveBar] = useState(() => app.cursorBar);
   const cv = useRef<HTMLCanvasElement>(null);
   const lastD = useRef(1);
 
@@ -60,6 +66,77 @@ export function PianoRoll() {
   const noteH = single ? 36 : rows * RH;
   const H = noteH + VEL_H + 4;
   const scale = new Set(SCALES[p.params.scale].map((x) => (x + p.params.key) % 12));
+
+  // Subscribe to playhead for live visual alignment between synth output and MIDI clip
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      if (now - last >= 45) {
+        last = now;
+        const st = engine.playing ? engine.getStep() : -1;
+        setLiveBar(st >= 0 ? st / 16 : store.get().cursorBar);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Immediate analytical synth waveform aligned to the active MIDI clip's notes & track DSP parameters
+  const analyticalWave = useMemo(() => {
+    if (!found || !showWaveform) return null;
+    return computeAnalyticalClipWaveform(
+      found.t,
+      {
+        loop: found.c.loop,
+        notes,
+        gain: found.c.gain,
+        transpose: found.c.transpose,
+      },
+      p.params.bpm,
+      16
+    );
+  }, [found, notes, p.params.bpm, showWaveform]);
+
+  // Asynchronous Web Audio OfflineAudioContext refinement using the real playVoice synth engine
+  useEffect(() => {
+    if (!found || !showWaveform) {
+      setOfflineWave(null);
+      return;
+    }
+    let cancelled = false;
+    renderOfflineClipWaveform(
+      found.t,
+      {
+        loop: found.c.loop,
+        notes: found.c.notes,
+        gain: found.c.gain,
+        transpose: found.c.transpose,
+      },
+      p.params.bpm,
+      p.params.dirt,
+      16
+    ).then((res) => {
+      if (!cancelled) setOfflineWave(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    found?.t.synth,
+    found?.t.cutoff,
+    found?.t.res,
+    found?.t.vol,
+    found?.c.id,
+    found?.c.loop,
+    found?.c.notes,
+    found?.c.gain,
+    found?.c.transpose,
+    p.params.bpm,
+    p.params.dirt,
+    showWaveform,
+  ]);
 
   useEffect(() => {
     const c = cv.current;
@@ -110,6 +187,58 @@ export function PianoRoll() {
       g.lineTo(x + 0.5, H);
       g.stroke();
     }
+
+    // ─── Visual Synth Audio Engine Waveform Overlay (Grid Backdrop & Composite Bus) ───
+    if (showWaveform && analyticalWave && (waveMode === 'both' || waveMode === 'grid')) {
+      const binsPerStep = analyticalWave.binsPerStep;
+      const activeMin = !draft && offlineWave && offlineWave.min.length === analyticalWave.min.length ? offlineWave.min : analyticalWave.min;
+      const activeMax = !draft && offlineWave && offlineWave.max.length === analyticalWave.max.length ? offlineWave.max : analyticalWave.max;
+      const activeRms = !draft && offlineWave && offlineWave.rms.length === analyticalWave.rms.length ? offlineWave.rms : analyticalWave.rms;
+      const totalBins = activeMax.length;
+      const midY = noteH * 0.5;
+      const ampScale = Math.max(14, noteH * 0.44);
+
+      // Center zero-crossing reference line
+      g.strokeStyle = 'rgba(6, 182, 212, 0.14)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(GUT, midY);
+      g.lineTo(GUT + loop * SW, midY);
+      g.stroke();
+
+      // Peak envelope fill (min..max)
+      g.fillStyle = found.t.color + '22';
+      g.beginPath();
+      for (let b = 0; b < totalBins; b++) {
+        const x = GUT + (b / binsPerStep) * SW;
+        const y = midY - activeMax[b] * ampScale;
+        if (b === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      for (let b = totalBins - 1; b >= 0; b--) {
+        const x = GUT + (b / binsPerStep) * SW;
+        const y = midY - activeMin[b] * ampScale;
+        g.lineTo(x, y);
+      }
+      g.closePath();
+      g.fill();
+
+      // RMS core energy contour
+      g.strokeStyle = '#06b6d4';
+      g.globalAlpha = 0.52;
+      g.lineWidth = 1.25;
+      g.beginPath();
+      for (let b = 0; b < totalBins; b++) {
+        const x = GUT + (b / binsPerStep) * SW;
+        const oscSign = b % 2 === 0 ? 1 : -1;
+        const y = midY - activeRms[b] * ampScale * 0.85 * oscSign;
+        if (b === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+
     if (loop * SW + GUT < W) {
       g.fillStyle = 'rgba(0,0,0,0.45)';
       g.fillRect(GUT + loop * SW, 0, W, H);
@@ -117,7 +246,7 @@ export function PianoRoll() {
     g.fillStyle = '#12161b';
     g.fillRect(GUT, noteH, W, 4);
     notes.forEach((n) => {
-      const x = GUT + n.t * SW;
+      const x = GUT + (n.t + (n.micro ?? 0)) * SW;
       const y = single ? 4 : (range.hi - n.p) * RH;
       const h = single ? noteH - 8 : RH - 1;
       const w = Math.max(4, n.d * SW - 1);
@@ -145,10 +274,49 @@ export function PianoRoll() {
       g.fillStyle = '#fff';
       g.fillRect(x - 1, noteH + 4 + VEL_H * (1 - n.v) - 1, 5, 3);
     });
+
+    // ─── Per-Note Aligned Synth Audio Waveform Overlay (Attack, Filter Env & Release Tail) ───
+    if (showWaveform && analyticalWave && (waveMode === 'both' || waveMode === 'notes')) {
+      const binsPerStep = analyticalWave.binsPerStep;
+      for (const slice of analyticalWave.noteSlices) {
+        const rowY = single ? noteH * 0.5 : (range.hi - slice.pitch) * RH + (RH - 1) * 0.5;
+        const ampH = single ? (noteH - 10) * 0.46 : (RH - 1) * 0.72;
+        g.strokeStyle = '#ffffff';
+        g.globalAlpha = 0.78;
+        g.lineWidth = 1.1;
+        g.beginPath();
+        for (let b = 0; b < slice.samples.length; b++) {
+          const stepPos = slice.startStep + b / binsPerStep;
+          if (stepPos > loop) break;
+          const sx = GUT + stepPos * SW;
+          const sy = rowY - slice.samples[b] * ampH;
+          if (b === 0) g.moveTo(sx, sy);
+          else g.lineTo(sx, sy);
+        }
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+    }
+
+    // ─── Live Playhead Alignment Marker ───
+    if (engine.playing || liveBar > 0) {
+      const clipEnd = found.c.start + found.c.len;
+      const inClip = liveBar >= found.c.start && liveBar <= clipEnd;
+      const relSteps = ((liveBar - found.c.start) * 16 + found.c.off) % Math.max(1, loop);
+      const normSteps = ((relSteps % loop) + loop) % loop;
+      const px = GUT + normSteps * SW;
+      g.strokeStyle = inClip ? '#f59e0b' : 'rgba(245, 158, 11, 0.35)';
+      g.lineWidth = inClip ? 1.8 : 1;
+      g.beginPath();
+      g.moveTo(px, 0);
+      g.lineTo(px, H);
+      g.stroke();
+    }
+
     g.fillStyle = '#7b8794';
     g.font = '8px monospace';
     g.fillText('VEL', 6, noteH + 16);
-  }, [found, notes, W, H, rows, range, SW, single, loop, noteH, scale]);
+  }, [found, notes, W, H, rows, range, SW, single, loop, noteH, scale, showWaveform, waveMode, analyticalWave, offlineWave, draft, liveBar]);
 
   // Interactive Clip Selector when no clip is currently selected
   if (!found) {
@@ -180,24 +348,28 @@ export function PianoRoll() {
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="h-3 w-1.5 shrink-0 rounded-sm" style={{ background: trk.color }} />
                 <span className="truncate text-[11px] font-medium text-slate-200">{trk.name}</span>
-                <span className="font-mono text-[9px] text-slate-500">({trk.clips.length})</span>
+                <span className="font-mono text-[9px] text-slate-400">
+                  {trk.clips.length} {trk.clips.length === 1 ? 'clip' : 'clips'}
+                </span>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {trk.clips[0] && (
                   <Btn
                     small
                     tone="cyan"
+                    title={`Open ${trk.clips[0].label} in Piano Roll (${trk.clips[0].notes.length} MIDI notes)`}
                     onClick={() => store.select({ kind: 'clip', id: trk.clips[0].id, track: trk.id })}
                   >
-                    Edit ({trk.clips[0].notes.length}n)
+                    Open Clip ({trk.clips[0].notes.length} notes)
                   </Btn>
                 )}
                 <Btn
                   small
                   disabled={trk.lock}
+                  title="Create a new empty MIDI clip at the playhead bar"
                   onClick={() => newClipAt(trk.id, Math.floor(store.get().cursorBar))}
                 >
-                  + New
+                  + New Clip
                 </Btn>
               </div>
             </div>
@@ -417,12 +589,12 @@ export function PianoRoll() {
           )}{' '}
           steps
         </span>
-        <span className="flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-slate-400" title="Euclidean rhythm generator: k=hits, n=steps, rot=rotation">
-          Euclid k{num(eu.k, (k) => setEu({ ...eu, k }), 1, 32, 'w-10')} n{num(eu.n, (n) => setEu({ ...eu, n }), 2, 64, 'w-10')}{' '}
-          rot{num(eu.rot, (rot) => setEu({ ...eu, rot }), 0, 63, 'w-10')}{' '}
-          {!single && <>♪{num(eu.pitch, (pitch) => setEu({ ...eu, pitch }), 0, 127, 'w-11')}</>}
+        <span className="flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-slate-400" title="Euclidean rhythm generator: distribute Hits evenly across Steps with step Offset">
+          Euclidean: Hits{num(eu.k, (k) => setEu({ ...eu, k }), 1, 32, 'w-10')} Steps{num(eu.n, (n) => setEu({ ...eu, n }), 2, 64, 'w-10')}{' '}
+          Offset{num(eu.rot, (rot) => setEu({ ...eu, rot }), 0, 63, 'w-10')}{' '}
+          {!single && <>Pitch{num(eu.pitch, (pitch) => setEu({ ...eu, pitch }), 0, 127, 'w-11')}</>}
           <Btn small tone="amber" onClick={applyEu} title="Generate Euclidean pattern into active clip">
-            Apply
+            Generate
           </Btn>
         </span>
         <Btn small onClick={() => commit(notes.map((n) => ({ ...n, t: Math.round(n.t), micro: 0 })), 'Quantize')} title="Snap note start times to exact 16th-note grid">
@@ -476,6 +648,29 @@ export function PianoRoll() {
         <Btn small tone="ghost" onClick={() => commit([], 'Clear notes')} title="Delete all notes in active clip">
           Delete All Notes
         </Btn>
+        {/* Visual Synth Audio Waveform Display Overlay Controls */}
+        <Btn
+          small
+          tone="cyan"
+          active={showWaveform}
+          onClick={() => setShowWaveform((v) => !v)}
+          title="Toggle visual synth audio engine waveform overlay aligned to active MIDI clip notes"
+        >
+          〰 Waveform Overlay
+        </Btn>
+        {showWaveform && (
+          <select
+            aria-label="Waveform overlay mode"
+            value={waveMode}
+            onChange={(e) => setWaveMode(e.target.value as WaveOverlayMode)}
+            className="h-6 text-[10px]"
+            title="Select how the synth audio engine waveform is overlaid on the Piano Roll"
+          >
+            <option value="both">Wave: Note + Bus Scope</option>
+            <option value="notes">Wave: Pitch-Aligned Notes</option>
+            <option value="grid">Wave: Composite Synth Bus</option>
+          </select>
+        )}
         <span className="ml-auto font-mono text-[10px] tabular-nums text-slate-500">
           {notes.length} notes · {KEY_NAMES[p.params.key]} {p.params.scale}
         </span>
@@ -490,8 +685,8 @@ export function PianoRoll() {
         />
       </div>
       <div className="shrink-0 border-t border-line px-2 py-0.5 text-[10px] text-slate-500">
-        Accent = amber caps (boosts filter env + level) · Slide = cyan wedge (glide <b>into</b> note, constant-time portamento) ·
-        velocity stalks below
+        Accent = amber caps (boosts filter env + level) · Slide = cyan wedge (glide <b>into</b> note) ·{' '}
+        <span className="text-cyan-300">〰 Synth Waveform Overlay</span> shows real-time synth engine envelope & release tail alignment
       </div>
     </div>
   );

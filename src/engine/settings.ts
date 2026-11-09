@@ -10,6 +10,9 @@ export interface AppSettings {
   latencyTarget: LatencyTarget;
   limiterCeiling: number; // dBFS (-6.0 to 0.0)
   analogWarmth: number; // 0.0 to 1.0
+  eqLow: number; // dB (-12 to +12) at 110 Hz lowshelf
+  eqMid: number; // dB (-12 to +12) at 1.0 kHz peaking
+  eqHigh: number; // dB (-12 to +12) at 6.5 kHz highshelf
   microDrift: boolean;
   defaultRowH: 24 | 32 | 44;
   defaultBpm: number;
@@ -24,6 +27,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   latencyTarget: 'low',
   limiterCeiling: -4.0,
   analogWarmth: 0.35,
+  eqLow: 0,
+  eqMid: 0,
+  eqHigh: 0,
   microDrift: true,
   defaultRowH: 32,
   defaultBpm: 130,
@@ -63,11 +69,109 @@ export const THEME_COLORS: Record<ThemePreset, string> = {
   obsidian: '#6366f1',
 };
 
+export interface ThemePalette {
+  accent: string;
+  secondary: string;
+  onAccent: string;
+  textBright: string;
+  textMain: string;
+  textMuted: string;
+  bg: string;
+  panel: string;
+  elev: string;
+  line: string;
+}
+
+export const THEME_PALETTES: Record<ThemePreset, ThemePalette> = {
+  amber: {
+    accent: '#f59e0b',
+    secondary: '#06b6d4',
+    onAccent: '#090b0e',
+    textBright: '#fef3c7',
+    textMain: '#e2e8f0',
+    textMuted: '#94a3b8',
+    bg: '#0b0d10',
+    panel: '#12161b',
+    elev: '#1b2128',
+    line: '#262e38',
+  },
+  cyan: {
+    accent: '#06b6d4',
+    secondary: '#f59e0b',
+    onAccent: '#041318',
+    textBright: '#cffafe',
+    textMain: '#dbeafe',
+    textMuted: '#7dd3fc',
+    bg: '#080e13',
+    panel: '#0f171e',
+    elev: '#16222c',
+    line: '#213342',
+  },
+  emerald: {
+    accent: '#10b981',
+    secondary: '#06b6d4',
+    onAccent: '#03140e',
+    textBright: '#d1fae5',
+    textMain: '#dcfce7',
+    textMuted: '#6ee7b7',
+    bg: '#08100d',
+    panel: '#0e1915',
+    elev: '#15251f',
+    line: '#20382f',
+  },
+  violet: {
+    accent: '#8b5cf6',
+    secondary: '#22d3ee',
+    onAccent: '#ffffff',
+    textBright: '#f3e8ff',
+    textMain: '#e9d5ff',
+    textMuted: '#c084fc',
+    bg: '#0c0914',
+    panel: '#141020',
+    elev: '#1e1830',
+    line: '#2e2546',
+  },
+  crimson: {
+    accent: '#ef4444',
+    secondary: '#fb923c',
+    onAccent: '#ffffff',
+    textBright: '#ffe4e6',
+    textMain: '#fecdd3',
+    textMuted: '#fda4af',
+    bg: '#11090c',
+    panel: '#1a1014',
+    elev: '#25171d',
+    line: '#38222b',
+  },
+  obsidian: {
+    accent: '#6366f1',
+    secondary: '#38bdf8',
+    onAccent: '#ffffff',
+    textBright: '#e0e7ff',
+    textMain: '#c7d2fe',
+    textMuted: '#94a3b8',
+    bg: '#07090e',
+    panel: '#0d111a',
+    elev: '#151b28',
+    line: '#222b3d',
+  },
+};
+
 export function applyTheme(theme: ThemePreset) {
   if (typeof document === 'undefined') return;
-  const color = THEME_COLORS[theme] || THEME_COLORS.amber;
-  document.documentElement.style.setProperty('--color-amber', color);
-  document.documentElement.setAttribute('data-theme', theme);
+  const pal = THEME_PALETTES[theme] || THEME_PALETTES.amber;
+  const root = document.documentElement;
+  root.style.setProperty('--color-amber', pal.accent);
+  root.style.setProperty('--color-cyan', pal.secondary);
+  root.style.setProperty('--color-on-amber', pal.onAccent);
+  root.style.setProperty('--color-text-bright', pal.textBright);
+  root.style.setProperty('--color-text-main', pal.textMain);
+  root.style.setProperty('--color-text-muted', pal.textMuted);
+  root.style.setProperty('--color-bg', pal.bg);
+  root.style.setProperty('--color-panel', pal.panel);
+  root.style.setProperty('--color-elev', pal.elev);
+  root.style.setProperty('--color-line', pal.line);
+  root.setAttribute('data-theme', theme);
 }
 
 class SettingsManager {

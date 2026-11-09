@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
-const srcImage = path.resolve('/app/applet/src/assets/images/aidaw_app_icon_1793985043836.jpg');
+const srcImage = path.resolve('/app/applet/src/assets/images/aidaw_minimal_geometric_logo_1794230991499.jpg');
 const publicDir = path.resolve('/app/applet/public');
 
 if (!fs.existsSync(srcImage)) {

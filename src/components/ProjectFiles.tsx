@@ -4,6 +4,7 @@ import type { Project } from '../engine/types';
 import { decodeSnapshot, encodeSnapshot } from '../engine/persistence';
 import { importAlsFile } from '../engine/alsImport';
 import { downloadProjectMidi } from '../engine/midiExport';
+import { createAmbientTechnoTemplate } from '../engine/composer';
 import { store, useApp } from '../store';
 import { seek, toggleLoop } from '../actions';
 import { Btn } from '../ui';
@@ -106,6 +107,23 @@ export function ProjectFiles({ compact, onOpenSettings }: { compact: boolean; on
                 </button>
               </div>
 
+              {/* Project Templates */}
+              <div className="flex flex-col gap-1 border-b border-line pb-1.5">
+                <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Project Templates</span>
+                <Btn
+                  tone="cyan"
+                  onClick={() => {
+                    setOpen(false);
+                    const nextSeed = (store.get().project.params.seed + 211) % 999999 || 2049;
+                    const tpl = createAmbientTechnoTemplate(nextSeed);
+                    store.replaceProject(tpl);
+                  }}
+                  title="Load 'Ambient Techno' template with extended 32/64-bar phrases and prioritized PAD & DRONE layers"
+                >
+                  ✦ New 'Ambient Techno' Template
+                </Btn>
+              </div>
+
               {/* File Storage */}
               <div className="flex flex-col gap-1">
                 <span className="text-[8px] font-semibold uppercase tracking-wider text-slate-400">Project Storage</span>
@@ -115,9 +133,19 @@ export function ProjectFiles({ compact, onOpenSettings }: { compact: boolean; on
                     setOpen(false);
                     input.current?.click();
                   }}
-                  title="Open an existing project JSON file"
+                  title="Open an existing AIDAW project (.aidaw.json) or Ableton Live Set (.als)"
                 >
-                  Open Project File…
+                  Open Project File (.json / .als)…
+                </Btn>
+                <Btn
+                  tone="amber"
+                  onClick={() => {
+                    setOpen(false);
+                    input.current?.click();
+                  }}
+                  title="Import an Ableton Live Set (.als) directly into AIDAW tracks and clips"
+                >
+                  Import Ableton Live Set (.als)…
                 </Btn>
                 <Btn
                   onClick={() => {
@@ -227,7 +255,7 @@ export function ProjectFiles({ compact, onOpenSettings }: { compact: boolean; on
       <input
         ref={input}
         type="file"
-        accept=".json,.aidaw.json,.als,application/json,application/x-gzip"
+        accept=".json,.aidaw.json,.als,.xml,.gz,application/json,application/x-gzip,application/gzip,application/octet-stream"
         className="hidden"
         aria-label="Open AIDAW or Ableton Live ALS project"
         onChange={async (event) => {
@@ -236,11 +264,18 @@ export function ProjectFiles({ compact, onOpenSettings }: { compact: boolean; on
           if (!file) return;
           try {
             if (file.size > 32 * 1024 * 1024) throw new Error('Project exceeds 32 MiB import limit');
-            if (file.name.toLowerCase().endsWith('.als')) {
-              const imported = await importAlsFile(await file.arrayBuffer(), file.name);
+            const buffer = await file.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+            const isAlsExt = file.name.toLowerCase().endsWith('.als');
+            const headText = !isGzip ? new TextDecoder('utf-8').decode(bytes.slice(0, 256)) : '';
+            const isAbletonXml = headText.includes('<Ableton') || headText.includes('<LiveSet');
+            if (isAlsExt || isGzip || isAbletonXml) {
+              const imported = await importAlsFile(buffer, file.name);
               setPending({ project: imported });
             } else {
-              setPending({ project: decodeSnapshot(await file.text()) });
+              const text = new TextDecoder('utf-8').decode(buffer);
+              setPending({ project: decodeSnapshot(text) });
             }
           } catch (error) {
             store.reportError(error);

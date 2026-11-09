@@ -2,6 +2,7 @@ import { store, useApp } from '../store';
 import { FORMS, LAYERS, ROLE_COLORS, STYLES } from '../engine/styles';
 import { KEY_NAMES, SCALE_NAMES } from '../engine/theory';
 import type { ComposeParams, ProdMode, ScaleId } from '../engine/types';
+import { createAmbientTechnoTemplate } from '../engine/composer';
 import { composeGenerate, regenerateSectionNow, setLayerLevel } from '../actions';
 import { Btn, RotaryKnob, Section } from '../ui';
 import { cn } from '../utils/cn';
@@ -18,7 +19,7 @@ export function Compose() {
       <Section title="Stylistic blueprint" collapsible>
         <div className="grid grid-cols-2 gap-1.5">
           {Object.values(STYLES).map((s) => (
-            <button key={s.id} onClick={() => set({ style: s.id, bpm: Math.round((s.bpm[0] + s.bpm[1]) / 2), scale: s.scales[0], swing: s.swing, dirt: s.dirt, form: 'auto' }, 'style')}
+            <button key={s.id} onClick={() => composeGenerate('new', { style: s.id, bpm: Math.round((s.bpm[0] + s.bpm[1]) / 2), scale: s.scales[0], swing: s.swing, dirt: s.dirt, form: 'auto', seed: (P.seed + 137) % 999999 })}
               className={cn('rounded-md border px-2 py-1.5 text-left text-[11px] leading-tight transition-colors', P.style === s.id ? 'border-amber bg-amber/10 text-amber' : 'border-line bg-elev text-slate-300 hover:border-slate-500')}>
               {s.name}<div className="mt-0.5 text-[9px] text-slate-500">{s.layers.length} layers · {s.bpm[0]}–{s.bpm[1]}</div>
             </button>
@@ -27,20 +28,22 @@ export function Compose() {
         <p className="mt-2 text-[10px] leading-snug text-slate-400">{style.desc}</p>
         <div className="mt-2.5">
           <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Atmospheric Mood &amp; Sound Flavor
+            Atmospheric Mood &amp; Sound Flavor (All Styles)
           </label>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {[
-              ['default', 'Standard Subgenre', 'Original style voicing'],
-              ['horror', 'Horror Vault', 'Locrian scale, vault rumbles, dark anvil strikes'],
-              ['cinematic', 'Cinematic Tension', 'Harmonic minor drones, bowed sub-bass, dub swells'],
-              ['hypnotic', 'Hypnotic Warehouse', 'Rolling polyrhythms, 303 acid, deep vault sub'],
+              ['default', 'Standard Club', 'Original subgenre voicing & groove'],
+              ['dark', 'Dark Underground', 'Phrygian dominant, gritty drive & sub rumble'],
+              ['horror', 'Horror Vault', 'Locrian tritone scale, vault rumbles & dark anvil'],
+              ['cinematic', 'Cinematic Dark', 'Harmonic minor drones, bowed sub & tension swells'],
+              ['hypnotic', 'Hypnotic Tunnel', 'Rolling polyrhythms, liquid 303 & deep dub chords'],
             ].map(([mKey, label, desc]) => {
               const active =
-                (mKey === 'horror' && P.scale === 'locrian') ||
+                (mKey === 'horror' && (P.scale === 'locrian' || P.scale === 'octatonic')) ||
                 (mKey === 'cinematic' && P.scale === 'harmonicMinor') ||
-                (mKey === 'hypnotic' && P.scale === 'phrygian') ||
-                (mKey === 'default' && P.scale === style.scales[0]);
+                (mKey === 'dark' && P.scale === 'phrygianDominant') ||
+                (mKey === 'hypnotic' && P.scale === 'phrygian' && P.poly >= 0.7) ||
+                (mKey === 'default' && P.scale === style.scales[0] && P.poly < 0.7);
               return (
                 <button
                   key={mKey}
@@ -48,15 +51,17 @@ export function Compose() {
                   onClick={() => {
                     let patch: Partial<ComposeParams> = {};
                     if (mKey === 'horror') {
-                      patch = { scale: 'locrian', dirt: 0.75, acid: 0.8, poly: 0.65, mode: 'industrial' };
+                      patch = { scale: 'locrian', dirt: 0.78, acid: 0.78, poly: 0.65, depth: 0.75, mode: 'industrial' };
                     } else if (mKey === 'cinematic') {
-                      patch = { scale: 'harmonicMinor', depth: 0.85, acid: 0.3, poly: 0.5, mode: 'hybrid' };
+                      patch = { scale: 'harmonicMinor', dirt: 0.55, depth: 0.88, acid: 0.42, poly: 0.55, mode: 'hybrid' };
+                    } else if (mKey === 'dark') {
+                      patch = { scale: 'phrygianDominant', dirt: 0.72, depth: 0.72, acid: 0.68, poly: 0.62, mode: 'industrial' };
                     } else if (mKey === 'hypnotic') {
-                      patch = { scale: 'phrygian', depth: 0.65, acid: 0.65, poly: 0.75, mode: 'hybrid' };
+                      patch = { scale: 'phrygian', dirt: Math.max(0.4, style.dirt), depth: 0.7, acid: 0.68, poly: 0.78, mode: 'hybrid' };
                     } else {
-                      patch = { scale: style.scales[0], dirt: style.dirt, mode: 'hybrid' };
+                      patch = { scale: style.scales[0], dirt: style.dirt, depth: 0.5, poly: 0.5, mode: 'hybrid' };
                     }
-                    set(patch, 'mood');
+                    composeGenerate('keep', { ...patch, seed: (P.seed + 31) % 999999 });
                   }}
                   className={cn(
                     'rounded border p-1.5 text-left transition-colors',
@@ -109,11 +114,21 @@ export function Compose() {
 
       <Section title="Generate" collapsible>
         <div className="grid grid-cols-1 gap-1.5">
-          <Btn tone="amber" className="!h-9" onClick={() => composeGenerate('new')}>Generate evolving arrangement</Btn>
+          <Btn tone="amber" className="!h-9" onClick={() => composeGenerate('new', { seed: (P.seed + 101) % 999999 })}>Generate evolving arrangement</Btn>
           <Btn onClick={() => composeGenerate('keep')} title="Re-generate using the current section structure & energies; locked sections/tracks are preserved">Regenerate · keep structure &amp; locks</Btn>
+          <Btn
+            tone="cyan"
+            onClick={() => {
+              const tpl = createAmbientTechnoTemplate((P.seed + 211) % 999999 || 2049);
+              store.replaceProject(tpl);
+            }}
+            title="Load 'Ambient Techno' template with longer loop phrases (32/64b) and prioritized PAD & DRONE layers"
+          >
+            ✦ Load 'Ambient Techno' Template (Long-Phrase PAD/DRONE)
+          </Btn>
           <Btn tone="ghost" onClick={() => composeGenerate('rig')}>Genre starter rig (routed, no clips)</Btn>
         </div>
-        <p className="mt-1.5 text-[10px] leading-snug text-slate-500">Peak-first: the densest loop for each of {style.layers.length} layers is generated first, then clips are removed per section by energy rules. {lockedTracks ? `${lockedTracks} locked track(s) are protected.` : 'Lock a track (L) to protect it.'} All results are undoable.</p>
+        <p className="mt-1.5 text-[10px] leading-snug text-slate-500">Peak-first: the densest loop for each of {style.layers.length} layers is generated first, then clips are evolved per phrase and sculpted by energy rules. {lockedTracks ? `${lockedTracks} locked track(s) are protected.` : 'Lock a track (L) to protect it.'} All results are undoable.</p>
       </Section>
 
       <Section title="Section matrix" collapsible right={<span className="text-[9px] text-slate-500">{p.sections.length} sections · {p.formId}</span>}>

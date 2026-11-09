@@ -36,10 +36,10 @@ export const LAYERS: Record<string, LayerDef> = {
   DRONE:  L({ id: 'DRONE', name: 'Fifth Drone', group: 'Harmony', synth: 'drone', color: '#8b5cf6', sc: 'harm', vol: 0.34, pan: 0, rev: 0.3, del: 0, reg: '60–600 Hz', enter: 0.75, full: 0.3, phrase: 32, melodic: true }),
   TEX:    L({ id: 'TEX', name: 'Noise Texture', group: 'Texture', synth: 'noise', color: '#94a3b8', sc: 'fx', vol: 0.22, pan: 0, rev: 0.5, del: 0, reg: '1–12 kHz', enter: 0.8, full: 0.3, phrase: 32 }),
   CRACKLE:L({ id: 'CRACKLE', name: 'Vinyl Crackle', group: 'Texture', synth: 'crackle', color: '#cbd5e1', sc: null, vol: 0.2, pan: 0, rev: 0.1, del: 0, reg: '2–16 kHz', enter: 0.9, full: 0.2, phrase: 32 }),
-  RISER:  L({ id: 'RISER', name: 'Risers', group: 'Transition', synth: 'riser', color: '#06b6d4', sc: null, vol: 0.5, pan: 0, rev: 0.25, del: 0, reg: 'Full', enter: 0, full: 0, phrase: 8 }),
-  IMPACT: L({ id: 'IMPACT', name: 'Impacts', group: 'Transition', synth: 'impact', color: '#ec4899', sc: null, vol: 0.7, pan: 0, rev: 0.2, del: 0, reg: '25–200 Hz', enter: 0, full: 0, phrase: 8 }),
-  CRASH:  L({ id: 'CRASH', name: 'Crash / Reverse', group: 'Transition', synth: 'crash', color: '#f472b6', sc: null, vol: 0.4, pan: 0, rev: 0.35, del: 0, reg: '3–16 kHz', enter: 0, full: 0, phrase: 8 }),
-  DOWNLIFT:L({ id: 'DOWNLIFT', name: 'Downlifters', group: 'Transition', synth: 'downlift', color: '#d946ef', sc: null, vol: 0.5, pan: 0, rev: 0.3, del: 0, reg: 'Full', enter: 0, full: 0, phrase: 8 }),
+  RISER:   L({ id: 'RISER', name: 'Risers', group: 'Transition', synth: 'riser', color: '#06b6d4', sc: 'fx', vol: 0.44, pan: 0, rev: 0.52, del: 0.22, reg: '180 Hz–4 kHz', enter: 0, full: 0, phrase: 8 }),
+  IMPACT:  L({ id: 'IMPACT', name: 'Impacts', group: 'Transition', synth: 'impact', color: '#ec4899', sc: null, vol: 0.66, pan: 0, rev: 0.46, del: 0.12, reg: '28–240 Hz', enter: 0, full: 0, phrase: 8 }),
+  CRASH:   L({ id: 'CRASH', name: 'Crash / Reverse', group: 'Transition', synth: 'crash', color: '#f472b6', sc: 'fx', vol: 0.36, pan: 0.08, rev: 0.54, del: 0.18, reg: '2.5–12.5 kHz', enter: 0, full: 0, phrase: 8 }),
+  DOWNLIFT:L({ id: 'DOWNLIFT', name: 'Downlifters', group: 'Transition', synth: 'downlift', color: '#d946ef', sc: 'fx', vol: 0.46, pan: 0, rev: 0.5, del: 0.18, reg: '45 Hz–2.4 kHz', enter: 0, full: 0, phrase: 8 }),
 };
 
 export const GROUP_ORDER: LayerGroup[] = ['Foundation', 'Groove', 'Character', 'Harmony', 'Texture', 'Transition'];
@@ -157,6 +157,13 @@ export const STYLES: Record<string, StyleDef> = {
     forms: ['industrial', 'acid', 'peakfirst'], swing: 0.52, cut16: 1, cut32: 2, void: 2, kick: 'stark', poly: [12, 20, 28], prog: [0, 1, 0, 0], dirt: 0.78,
     thr: { ACID2: [0.6, 0.95], CLANG: [0.4, 0.8], RUMBLE: [0.15, 0.5] },
   },
+  ambient: {
+    id: 'ambient', name: 'Ambient Techno', desc: '116–124 BPM · extended 32/64-bar atmospheric phrases, prioritized evolving PAD & DRONE beds, tape-dubbed chords & deep organic pulse.',
+    bpm: [116, 124], scales: ['dorian', 'minor', 'phrygian', 'harmonicMinor'],
+    layers: ['PAD', 'DRONE', 'DUB', 'ARP', 'TEX', 'CRACKLE', 'SUB', 'RUMBLE', 'KICK', 'HAT_C', 'SHAKER', 'PERC1', 'PERC2', 'ACID1', ...ATOMS],
+    forms: ['ambient', 'dub', 'plateau'], swing: 0.56, cut16: 0.5, cut32: 1, void: 2, kick: 'ghost', poly: [16, 24, 32], prog: [0, 3, 5, 2], dirt: 0.14,
+    thr: { PAD: [0.02, 0.2], DRONE: [0.02, 0.18], DUB: [0.08, 0.3], TEX: [0.05, 0.25], ARP: [0.14, 0.38], SUB: [0.16, 0.42], RUMBLE: [0.18, 0.45], KICK: [0.26, 0.52], HAT_C: [0.28, 0.55], PERC1: [0.22, 0.5], ACID1: [0.38, 0.72] },
+  },
 };
 
 export interface SectionSpec { role: SectionRole; bars: number[]; energy: number; flex?: boolean; p?: number; name?: string }
@@ -196,6 +203,18 @@ export const FORMS: Record<string, FormDef> = {
   tool: {
     id: 'tool', name: 'H · DJ Tool Evolution', range: '96–144 bars', desc: 'Minimal, mix-friendly: gradual layering, one short break, one peak.',
     sections: [S('INTRO', [16], 0.3), S('PLATEAU', [32], 0.6, { flex: true }), S('VARIATION', [16], 0.45), S('PLATEAU', [32], 0.75, { flex: true, name: 'Plateau II' }), S('REDUCTION', [8], 0.35), S('DROP_PEAK', [16, 32], 0.92, { flex: true }), S('OUTRO', [16], 0.3)],
+  },
+  ambient: {
+    id: 'ambient', name: 'I · Ambient Techno Long-Phrase Horizon', range: '160–240 bars', desc: 'Extended 24/32/48-bar sections led by continuous evolving PAD and DRONE layers, gradual dub-chord immersion, and deep hypnotic pulse.',
+    sections: [
+      S('INTRO', [32, 24], 0.28, { name: 'Horizon Intro (Pad & Drone)' }),
+      S('GROOVE_BUILD', [24, 32], 0.44, { name: 'Subterranean Drift' }),
+      S('PLATEAU', [32, 48], 0.64, { flex: true, name: 'Atmospheric Immersion I' }),
+      S('REDUCTION', [24, 32], 0.32, { name: 'Weightless Suspension' }),
+      S('VARIATION', [24], 0.54, { name: 'Harmonic Shift' }),
+      S('DROP_PEAK', [32, 48], 0.84, { flex: true, name: 'Deep Horizon Peak' }),
+      S('OUTRO', [24, 32], 0.26, { name: 'Infinite Decay Outro' }),
+    ],
   },
 };
 

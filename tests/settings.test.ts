@@ -90,4 +90,84 @@ describe('Settings & Metronome Engine', () => {
       (globalThis as unknown as { document: typeof origDoc }).document = origDoc;
     }
   });
+
+  it('saves, loads, applies, and deletes Device Rack presets including EQ, filter, and sends', async () => {
+    const {
+      loadDevicePresets,
+      saveDevicePreset,
+      deleteDevicePreset,
+      applyDevicePresetToTrackPatch,
+    } = await import('../src/engine/presets');
+
+    const initial = loadDevicePresets();
+    expect(initial.length).toBeGreaterThanOrEqual(10);
+
+    const saved = saveDevicePreset(
+      'Hypnotic Acid Vault',
+      {
+        synth: 'acid',
+        vol: 0.62,
+        pan: -0.12,
+        cutoff: 0.58,
+        res: 0.76,
+        rev: 0.34,
+        del: 0.42,
+        sc: 'harm',
+      },
+      { eqLow: 1.5, eqMid: 2.5, eqHigh: -0.5 },
+      'Custom'
+    );
+
+    expect(saved.name).toBe('Hypnotic Acid Vault');
+    expect(saved.track.cutoff).toBe(0.58);
+    expect(saved.track.res).toBe(0.76);
+    expect(saved.track.rev).toBe(0.34);
+    expect(saved.track.del).toBe(0.42);
+    expect(saved.eq.eqMid).toBe(2.5);
+
+    const patch = applyDevicePresetToTrackPatch(saved);
+    expect(patch).toEqual({
+      synth: 'acid',
+      vol: 0.62,
+      pan: -0.12,
+      cutoff: 0.58,
+      res: 0.76,
+      rev: 0.34,
+      del: 0.42,
+      sc: 'harm',
+    });
+
+    const afterDelete = deleteDevicePreset(saved.id);
+    expect(afterDelete.some((p) => p.id === saved.id)).toBe(false);
+  });
+
+  it('computes step-aligned Piano Roll synth waveform slices and envelopes for active MIDI clips', async () => {
+    const { computeAnalyticalClipWaveform } = await import('../src/engine/clipWaveform');
+    const wave = computeAnalyticalClipWaveform(
+      { synth: 'acid', cutoff: 0.55, res: 0.75, vol: 0.8 },
+      {
+        loop: 16,
+        gain: 1.0,
+        transpose: 0,
+        notes: [
+          { t: 0, d: 2, p: 45, v: 0.9, acc: true },
+          { t: 4, d: 2, p: 57, v: 0.8, slide: true },
+        ],
+      },
+      132,
+      16
+    );
+    expect(wave.totalSteps).toBe(16);
+    expect(wave.binsPerStep).toBe(16);
+    expect(wave.min.length).toBe(256);
+    expect(wave.max.length).toBe(256);
+    expect(wave.rms.length).toBe(256);
+    expect(wave.noteSlices.length).toBe(2);
+    // Verify active waveform energy exists at step 0 (bins 0..31) and step 4 (bins 64..95)
+    const energyAtStep0 = wave.rms.slice(0, 16).reduce((a, b) => a + b, 0);
+    const energyAtStep4 = wave.rms.slice(64, 80).reduce((a, b) => a + b, 0);
+    expect(energyAtStep0).toBeGreaterThan(0.1);
+    expect(energyAtStep4).toBeGreaterThan(0.1);
+  });
 });
+

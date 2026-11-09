@@ -284,8 +284,8 @@ export function Btn({ children, onClick, active, tone = 'default', className, ti
 }) {
   const tones = {
     default: 'bg-elev border-line hover:bg-[#232b35] text-slate-200',
-    amber: 'bg-amber/90 border-amber text-black hover:bg-amber font-semibold',
-    cyan: 'bg-cyan/90 border-cyan text-black hover:bg-cyan font-semibold',
+    amber: 'bg-amber/90 border-amber text-[var(--color-on-amber,#090b0e)] hover:bg-amber font-semibold',
+    cyan: 'bg-cyan/90 border-cyan text-[#041318] hover:bg-cyan font-semibold',
     red: 'bg-red-500/90 border-red-400 text-white hover:bg-red-500',
     ghost: 'bg-transparent border-transparent hover:bg-elev text-slate-300',
   };

@@ -62,16 +62,55 @@ export function mutate(notes: Note[], loop: number, kind: 'oct' | 'rot' | 'frag'
 
 // ───────────────────────── peak patterns (densest version first) ─────────────────────────
 function acidLine(c: Ctx, base: number, len: number, accP: number, slP: number, octP: number, restP: number): PN[] {
-  const { rng, P } = c; const out: PN[] = []; const pool = [0, 0, 0, 2, 3, 4, 0, 6, 1, 4];
+  const { rng, P } = c;
+  const out: PN[] = [];
+  // Musical 303 scale-degree motifs: root-anchored call & response (avoids random nasal semitone soup)
+  const motifs = [
+    [0, 0, 4, 0, 2, 3, 0, 6, 0, 0, 5, 4, 2, 0, 6, 3],
+    [0, 0, 2, 4, 0, 0, 6, 4, 0, 2, 3, 0, 4, 6, 2, 0],
+    [0, 4, 0, 2, 0, 6, 3, 0, 0, 4, 5, 2, 0, 3, 1, 0],
+    [0, 0, 3, 2, 0, 4, 0, 6, 0, 3, 5, 4, 0, 2, 6, 1],
+  ];
+  const motif = rng.pick(motifs);
+  const rot = rng.int(0, 7);
   let prev = -2;
   for (let s = 0; s < len; s++) {
-    const m = s % 4; const w = m === 2 ? 0.92 : m === 3 ? 0.78 : m === 1 ? 0.55 : 0.42;
-    if (rng.next() > w * (1 - restP) + 0.05) { prev = -2; continue; }
-    let p = degree(base, P.scale, rng.pick(pool));
-    if (rng.chance(octP)) p += 12;
-    const acc = rng.chance(accP * (m === 3 || m === 1 ? 1.3 : 0.8));
-    const slide = prev === s - 1 && rng.chance(slP);
-    out.push({ t: s, d: slide ? 1.15 : 0.85, p, v: acc ? 1 : 0.72, acc, slide, pri: (1 - w) * 0.6 + rng.next() * 0.4 });
+    const barIdx = Math.floor(s / 16);
+    const stepInBar = s % 16;
+    const m = s % 4;
+    // Strong 303 rhythmic groove weights: offbeats (m===2) and 16th pickups (m===3) drive the line
+    const w = m === 2 ? 0.94 : m === 3 ? 0.8 : m === 0 ? 0.56 : 0.48;
+    // Leave musical breathing space so the 303 filter decay can sing
+    if (rng.next() > w * (1 - restP) + 0.04) {
+      prev = -2;
+      continue;
+    }
+    // Anchor root on step 0 or step 2 of bar 0 so the bassline has unmistakable tonal gravity
+    let deg = motif[(stepInBar + rot + barIdx * 3) % motif.length];
+    if (stepInBar === 0 || (barIdx === 0 && stepInBar === 2)) {
+      deg = 0;
+    } else if (barIdx % 2 === 1 && stepInBar >= 12) {
+      // Bar 2 / Bar 4 turnaround variation
+      deg = rng.pick([2, 3, 4, 5, 6]);
+    }
+    let p = degree(base, P.scale, deg);
+    // Controlled octave jumps on offbeats or turnaround steps
+    if ((m === 2 || stepInBar >= 11) && rng.chance(octP)) {
+      p += 12;
+    } else if (m === 0 && deg === 0 && rng.chance(0.18)) {
+      p -= 12;
+    }
+    const acc = (m === 2 && stepInBar % 8 === 2) || rng.chance(accP * (m === 2 || m === 3 ? 1.25 : 0.7));
+    const slide = prev === s - 1 && rng.chance(slP * (stepInBar >= 10 || m === 3 ? 1.35 : 0.9));
+    out.push({
+      t: s,
+      d: slide ? 1.18 : acc ? 0.82 : 0.72,
+      p,
+      v: acc ? 0.98 : 0.72 + (m === 2 ? 0.08 : 0),
+      acc,
+      slide,
+      pri: stepInBar === 2 || stepInBar === 6 ? 0.04 : (1 - w) * 0.58 + rng.next() * 0.38,
+    });
     prev = s;
   }
   return out;
@@ -85,15 +124,31 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
   const { rng, style, P, R } = c; const cx = P.complexity; const N: PN[] = [];
   const add = (t: number, d: number, p: number, v: number, pri: number, ex: Partial<Note> = {}) => N.push({ t, d, p, v, pri, ...ex });
   let loop = 16;
-  const isHypnoticFamily = style.id === 'hypnotic' || style.id === 'minimal_groover' || style.id === 'mental_tribal';
+  const isAmbient = style.id === 'ambient';
+  const isHypnoticFamily = style.id === 'hypnotic' || style.id === 'minimal_groover' || style.id === 'mental_tribal' || isAmbient;
+  const isHorror = P.scale === 'locrian' || P.scale === 'octatonic';
+  const isCinematic = P.scale === 'harmonicMinor' || P.scale === 'phrygianDominant' || isAmbient;
+  const isDark = isHorror || isCinematic || P.scale === 'phrygian' || P.dirt >= 0.65 || P.mode === 'industrial';
   switch (l.id) {
     case 'KICK':
       for (const s of [0, 4, 8, 12]) add(s, 1, 36, 1, 0);
-      if (style.kick === 'ghost') { add(7.5, 0.5, 36, 0.4, 0.7); add(15, 0.5, 36, 0.35, 0.85); }
-      if (style.id === 'schranz') { add(3.5, 0.5, 36, 0.52, 0.45); add(11.5, 0.5, 36, 0.58, 0.35); add(14.5, 0.5, 36, 0.48, 0.6); }
+      if (style.kick === 'ghost' || isHorror) { add(7.5, 0.5, 36, 0.44, 0.65); add(15, 0.5, 36, 0.38, 0.8); }
+      if (style.id === 'schranz' || (isDark && P.mode === 'industrial')) { add(3.5, 0.5, 36, 0.52, 0.45); add(11.5, 0.5, 36, 0.58, 0.35); add(14.5, 0.5, 36, 0.48, 0.6); }
       break;
     case 'SUB':
-      if (style.id === 'hypnotic' || style.id === 'minimal_groover') {
+      if (isHorror) {
+        // Ominous creeping sub-bass with tritone/minor-2nd tail
+        for (const s of [1.5, 3, 5.5, 7, 9.5, 11, 13.5, 15]) {
+          const strong = s % 4 === 1.5;
+          const deg = s === 7 ? 1 : s === 15 ? 4 : 0;
+          add(s, strong ? 1.35 : 0.8, degree(R, P.scale, deg), strong ? 0.94 : 0.74, strong ? 0.05 : 0.3, { micro: strong ? 0.015 : -0.02 });
+        }
+      } else if (isCinematic) {
+        // Bowed sustained sub-bass pedal with dramatic 8-bar/16-step movement
+        for (const [s, d, deg, v, pri] of [[0.5, 3.2, 0, 0.92, 0], [4.5, 3.2, 0, 0.88, 0.1], [8.5, 3.2, 5, 0.9, 0.15], [12.5, 3.0, 4, 0.92, 0.1]] as const) {
+          add(s, d, degree(R, P.scale, deg), v, pri);
+        }
+      } else if (style.id === 'hypnotic' || style.id === 'minimal_groover') {
         for (const s of [1.5, 2.5, 5.5, 6.5, 9.5, 10.5, 13.5, 14.5]) {
           const strong = s % 4 === 2.5;
           add(s, strong ? 1.2 : 0.75, R, strong ? 0.92 : 0.72, strong ? 0.05 : 0.35, { micro: strong ? 0.02 : -0.02 });
@@ -111,10 +166,10 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       break;
     case 'RUMBLE':
       for (const s of [1, 5, 9, 13]) add(s, 2.8, R, 0.88, s === 1 ? 0 : 0.05);
-      if (isHypnoticFamily) {
+      if (isHypnoticFamily || isDark) {
         for (const beat of [0, 4, 8, 12]) {
-          add(beat + 1.5, 0.75, R, 0.56, 0.15, { micro: -0.015 });
-          add(beat + 2.5, 0.85, R, 0.78, 0.08, { micro: 0.015 });
+          add(beat + 1.5, 0.75, R, 0.58, 0.15, { micro: -0.015 });
+          add(beat + 2.5, 0.85, isHorror && beat === 12 ? degree(R, P.scale, 1) : R, 0.8, 0.08, { micro: 0.015 });
           add(beat + 3.25, 0.65, R, 0.68, 0.22, { micro: 0.025 });
         }
       }
@@ -123,7 +178,12 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       for (let s = 0; s < 16; s++) {
         if (s % 4 === 0) continue;
         const off = s % 4 === 2;
-        add(s, 0.85, off ? R : rng.pick([R, R, degree(R, P.scale, 2), degree(R, P.scale, 4), R + 12]), off ? 0.95 : 0.75, off ? 0.05 : rng.range(0.3, 1));
+        const choices = isHorror
+          ? [R, degree(R, P.scale, 1), degree(R, P.scale, 4), R + 6]
+          : isCinematic
+            ? [R, degree(R, P.scale, 2), degree(R, P.scale, 5), R + 12]
+            : [R, R, degree(R, P.scale, 2), degree(R, P.scale, 4), R + 12];
+        add(s, 0.85, off ? R : rng.pick(choices), off ? 0.95 : 0.75, off ? 0.05 : rng.range(0.3, 1));
       }
       break;
     case 'HAT_C':
@@ -152,11 +212,12 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       for (const s of [7, 9.5, 14, 11]) if (rng.chance(0.4 + cx * 0.5)) add(s, 0.5, 38, 0.3, 0.5 + rng.next() * 0.4);
       break;
     case 'PERC1': {
-      if (isHypnoticFamily) {
+      if (isHypnoticFamily || isDark) {
         loop = 12;
         const pat = euclid(5, 12, rng.int(0, 11));
-        // Key-locked low-mid woody/skin analog register (no high digital bleep pitches)
-        const pool = [R + 12, degree(R + 12, P.scale, 1), degree(R + 12, P.scale, 4), R + 19];
+        const pool = isHorror
+          ? [R + 12, degree(R + 12, P.scale, 1), R + 18, degree(R + 12, P.scale, 4)]
+          : [R + 12, degree(R + 12, P.scale, 1), degree(R + 12, P.scale, 4), R + 19];
         pat.forEach((h, i) => {
           if (h) add(i, 0.75, pool[i % pool.length], 0.56 + (i % 3 === 0 ? 0.22 : 0.08), i % 3 === 0 ? 0.08 : 0.35, { micro: i % 2 === 1 ? 0.02 : -0.015 });
         });
@@ -169,14 +230,14 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
     }
     case 'PERC2': {
       loop = rng.pick(style.poly); const k = clamp(Math.round(loop * (0.33 + P.poly * 0.18)), 3, loop - 2);
-      const pool = isHypnoticFamily ? [R + 12, degree(R + 12, P.scale, 2), degree(R + 12, P.scale, 4), R + 19] : [52, 55, 59, 62];
+      const pool = isHypnoticFamily || isDark ? [R + 12, degree(R + 12, P.scale, 2), degree(R + 12, P.scale, 4), R + 19] : [52, 55, 59, 62];
       euclid(k, loop, rng.int(0, loop - 1)).forEach((h, i) => {
         if (h) add(i, 0.75, pool[i % pool.length], 0.45 + rng.next() * 0.35, i % 4 === 0 ? 0.15 : rng.next() * 0.85, isHypnoticFamily ? { micro: i % 2 === 0 ? 0.018 : -0.018 } : {});
       });
       break;
     }
     case 'CONGA': {
-      const pool = isHypnoticFamily ? [R + 12, degree(R + 12, P.scale, 3), degree(R + 12, P.scale, 4)] : [50, 53, 55];
+      const pool = isHypnoticFamily || isDark ? [R + 12, degree(R + 12, P.scale, 3), degree(R + 12, P.scale, 4)] : [50, 53, 55];
       if (isHypnoticFamily) {
         loop = 12;
         euclid(7, 12, rng.int(0, 5)).forEach((h, i) => {
@@ -188,9 +249,8 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       break;
     }
     case 'TOM':
-      if (isHypnoticFamily) {
-        // Driving syncopated low-tom warehouse pulse interlocking with kick and offbeat sub
-        const tomPitches = [R, degree(R, P.scale, 4), R + 7];
+      if (isHypnoticFamily || isDark) {
+        const tomPitches = isHorror ? [R, R + 6, degree(R, P.scale, 1)] : [R, degree(R, P.scale, 4), R + 7];
         const steps = [2, 3, 6, 7.5, 10, 11, 14, 15];
         steps.forEach((s, idx) => {
           const strong = s === 2 || s === 6 || s === 10 || s === 14;
@@ -201,77 +261,151 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
       }
       break;
     case 'CLANG':
-      if (style.id === 'schranz') {
+      if (style.id === 'schranz' || isHorror) {
         loop = 16;
-        for (const s of [2, 6, 10, 14, 3, 11, 15]) add(s, 0.75, rng.int(52, 64), s % 4 === 2 ? 0.85 : 0.55, s % 4 === 2 ? 0.1 : 0.45);
+        const clangSteps = isHorror ? [1.5, 4.5, 7, 10.5, 13, 15.5] : [2, 6, 10, 14, 3, 11, 15];
+        for (const s of clangSteps) add(s, 0.75, rng.int(46, 62), s % 4 === 2 ? 0.85 : 0.6, s % 4 === 2 ? 0.08 : 0.4);
       } else {
         loop = 32;
-        for (let i = 0; i < 5; i++) add(rng.pick([3, 7, 11, 13, 19, 23, 27, 29, 31]), 1, rng.int(50, 66), 0.5 + rng.next() * 0.4, rng.next());
+        for (let i = 0; i < 6; i++) add(rng.pick([3, 7, 11, 13, 19, 23, 27, 29, 31]), 1, rng.int(48, 64), 0.5 + rng.next() * 0.4, rng.next());
       }
       break;
     case 'ACID1': {
+      // Multi-bar evolving TB-303 bassline register (1 octave above sub R, call-and-response across 32/64 steps)
       const base = R + 12;
-      if (isHypnoticFamily) {
-        loop = rng.pick([12, 16, 20]);
-        // Generative 303 acid line contour using scale-aware degree pools and seed-driven syncopations
-        const degreePools = [
-          [0, 0, 1, 0, 4, 1, 0, 3],
-          [0, 1, 3, 0, 5, 1, 7, 0],
-          [0, 0, 2, 4, 0, 5, 2, 7],
-          [0, 1, 0, 3, 6, 1, 0, 4],
+      if (isHorror) {
+        loop = 32;
+        const horrorBars = [
+          [0, 1, 0, 4, 1, 3, 0, 6],
+          [0, 4, 1, 0, 6, 3, 1, 4],
         ];
-        const pool = rng.pick(degreePools);
-        const octChance = 0.25 + P.acid * 0.35;
         let prevStep = -2;
         for (let s = 0; s < loop; s++) {
-          const offbeat = s % 2 === 1;
-          const prob = offbeat ? 0.78 : s % 4 === 0 ? 0.65 : 0.85;
-          if (rng.next() > prob) { prevStep = -2; continue; }
-          let deg = pool[s % pool.length];
+          if (rng.next() > 0.74) { prevStep = -2; continue; }
+          const barPool = horrorBars[Math.floor(s / 16) % horrorBars.length];
+          const deg = s % 16 === 0 ? 0 : barPool[(s + rng.int(0, 2)) % barPool.length];
           let p = degree(base, P.scale, deg);
-          if ((s % 3 === 2 || s % 4 === 3) && rng.chance(octChance)) p += 12;
-          const acc = (s % 4 === 2 || s % 3 === 2 || rng.chance(0.28 + P.acid * 0.22));
-          const slide = prevStep === s - 1 && rng.chance(0.35 + P.acid * 0.35);
-          add(s, slide ? 1.18 : 0.82, p, acc ? 0.95 : 0.7, acc ? 0.06 : 0.32 + (s / loop) * 0.35, { acc, slide, micro: offbeat ? 0.018 : -0.012 });
+          if (s % 4 === 2 && rng.chance(0.38)) p += 12;
+          else if (s % 8 === 0 && rng.chance(0.22)) p -= 12;
+          const acc = s % 4 === 2 || rng.chance(0.32 + P.acid * 0.25);
+          const slide = prevStep === s - 1 && rng.chance(0.38 + P.acid * 0.32);
+          add(s, slide ? 1.2 : 0.76, p, acc ? 0.96 : 0.72, acc ? 0.05 : 0.28 + ((s % 16) / 16) * 0.35, { acc, slide });
+          prevStep = s;
+        }
+      } else if (isAmbient || isCinematic) {
+        loop = 32;
+        // Liquid hypnotic 2-bar evolving 303 sequence with spacious filter decays
+        const cinMotifA = [0, 0, 2, 4, 0, 5, 4, 2];
+        const cinMotifB = [0, 2, 4, 6, 5, 4, 2, 1];
+        let prevStep = -2;
+        for (let s = 0; s < loop; s++) {
+          const stepInBar = s % 16;
+          if (stepInBar % 4 === 0 && stepInBar > 0 && rng.chance(0.42)) { prevStep = -2; continue; }
+          if (isAmbient && stepInBar % 2 === 1 && rng.chance(0.45)) { prevStep = -2; continue; }
+          const motif = s < 16 ? cinMotifA : cinMotifB;
+          const deg = motif[stepInBar % motif.length];
+          let p = degree(base, P.scale, deg);
+          if (stepInBar === 6 || stepInBar === 14) p += 12;
+          const acc = stepInBar % 4 === 2 || s === 30;
+          const slide = prevStep === s - 1 && (stepInBar % 2 === 1 || rng.chance(0.4));
+          add(s, slide ? 1.22 : 0.82, p, acc ? 0.94 : 0.72, acc ? 0.06 : 0.26 + (stepInBar / 16) * 0.3, { acc, slide });
+          prevStep = s;
+        }
+      } else if (isHypnoticFamily) {
+        // 32-step or 48-step multi-bar evolving 303 roller so consecutive bars never repeat identically
+        loop = rng.pick([24, 32]);
+        const degreePools = [
+          [0, 0, 4, 0, 2, 4, 0, 6],
+          [0, 2, 4, 0, 5, 4, 2, 0],
+          [0, 4, 2, 0, 6, 3, 4, 0],
+          [0, 0, 3, 4, 0, 6, 2, 4],
+          [0, 3, 2, 6, 4, 0, 5, 2],
+        ];
+        const poolA = degreePools[rng.int(0, degreePools.length - 1)];
+        const poolB = degreePools[(rng.int(1, degreePools.length - 1)) % degreePools.length];
+        const rot = rng.int(0, poolA.length - 1);
+        const gateHits = clamp(Math.round(loop * (0.54 + P.density * 0.24)), 8, loop - 2);
+        const gateMask = euclid(gateHits, loop, rng.int(0, loop - 1));
+        const octChance = 0.2 + P.acid * 0.34;
+        let prevStep = -2;
+        for (let s = 0; s < loop; s++) {
+          if (!gateMask[s] && rng.next() > 0.22) { prevStep = -2; continue; }
+          const offbeat = s % 2 === 1;
+          const activePool = s < loop / 2 ? poolA : poolB;
+          const rawDeg = s % 16 === 0 || s % 16 === 2 ? 0 : activePool[(s + rot) % activePool.length];
+          let p = degree(base, P.scale, Math.max(0, rawDeg));
+          if ((s % 4 === 2 || s % 8 === 7) && rng.chance(octChance)) p += 12;
+          const acc = s % 4 === 2 || rng.chance(0.24 + P.acid * 0.26);
+          const slide = prevStep === s - 1 && rng.chance(0.32 + P.acid * 0.34);
+          add(s, slide ? 1.18 : 0.76, p, acc ? 0.96 : 0.72, acc ? 0.06 : 0.3 + ((s % 16) / 16) * 0.35, {
+            acc,
+            slide,
+            micro: offbeat ? 0.016 : -0.01,
+          });
           prevStep = s;
         }
       } else {
-        const a = acidLine(c, base, 16, 0.22 + P.acid * 0.28, 0.16 + P.acid * 0.22, 0.12, 0.2 - P.acid * 0.1);
-        if (style.id === 'acid') { loop = 32; const b = mutate(a, 16, 'oct', rng) as PN[]; N.push(...a, ...b.map((n, i) => ({ ...n, t: n.t + 16, pri: a[i].pri }))); }
-        else N.push(...a);
+        loop = 32;
+        const a = acidLine(c, base, 32, 0.24 + P.acid * 0.28, 0.2 + P.acid * 0.24, 0.2, 0.22 - P.acid * 0.08);
+        N.push(...a);
       }
       break;
     }
     case 'ACID2': {
-      loop = 32; const base = R + 12;
-      const a = acidLine(c, base, 16, 0.4 + P.acid * 0.3, 0.3, 0.25, 0.35 - P.acid * 0.1);
-      const b = acidLine(c, base, 16, 0.5 + P.acid * 0.3, 0.35, 0.25, 0.3);
-      N.push(...a, ...b.map((n) => ({ ...n, t: n.t + 16 })));
+      loop = 32;
+      const base = R + 12;
+      // Counter-rhythmic upper-octave 303 screamer with distinct 2-bar call and response
+      const a = acidLine(c, base, 16, 0.38 + P.acid * 0.3, 0.34, 0.32, 0.34 - P.acid * 0.08);
+      const b = acidLine(c, base, 16, 0.46 + P.acid * 0.3, 0.4, 0.36, 0.28);
+      N.push(
+        ...a,
+        ...b.map((n, idx) => ({
+          ...n,
+          t: n.t + 16,
+          p: idx % 3 === 0 ? degree(base, P.scale, 4) + (n.p >= base + 12 ? 12 : 0) : n.p,
+        }))
+      );
       break;
     }
     case 'STAB': {
-      if (isHypnoticFamily) {
+      // Sparse syncopated warehouse chord stabs (mid register R+12, short punchy hits on offbeats)
+      if (isHorror) {
+        loop = 32;
+        const horrorHits = [2.5, 7, 13.5, 18.5, 25, 30];
+        horrorHits.forEach((h, hi) => {
+          const chord = chordPitches(c, R + 12, style.prog[hi % style.prog.length] ?? 0, [0, 1, 3, 6]);
+          chord.forEach((p, k) => add(h, 1.15, p, 0.78 - k * 0.05, (hi % 3) * 0.18));
+        });
+      } else if (isCinematic) {
+        loop = 32;
+        const cinHits = [2, 6.5, 14, 18, 22.5, 30];
+        cinHits.forEach((h, hi) => {
+          const chord = chordPitches(c, R + 12, style.prog[Math.floor(h / 8) % style.prog.length] ?? 0, [0, 2, 4, 6]);
+          chord.forEach((p, k) => add(h, 1.65, p, 0.76 - k * 0.04, (hi % 3) * 0.16));
+        });
+      } else if (isHypnoticFamily) {
         loop = rng.pick([16, 32]);
         const hitPatterns = [
-          [2, 5.5, 10, 13.5],
-          [1.5, 5, 9.5, 13],
-          [3, 7.5, 11, 14.5],
-          [2, 6, 10, 14],
+          [2.5, 7, 11.5],
+          [1.5, 6, 13.5],
+          [3, 7.5, 14],
+          [2, 9.5, 14.5],
+          [3.5, 10, 15],
         ];
         const hits = rng.pick(hitPatterns);
         const voicings = [
-          [0, 2, 4],       // Triad
+          [0, 2, 4],       // Minor triad
           [0, 2, 4, 6],    // Minor 7th
-          [0, 1, 4, 6],    // Sus2/4 tension
-          [2, 4, 7],       // Inverted triad
+          [0, 1, 4],       // Phrygian tension cluster
+          [0, 3, 4, 6],    // Suspended 4th + 7th
         ];
         for (let half = 0; half < (loop / 16); half++) {
-          const rootDeg = style.prog[half % style.prog.length] ?? 0;
-          const voicing = rng.pick(voicings);
+          const rootDeg = style.prog[(half + rng.int(0, style.prog.length - 1)) % style.prog.length] ?? 0;
+          const voicing = voicings[(half + rng.int(0, voicings.length - 1)) % voicings.length];
           hits.forEach((h, hi) => {
             const chord = chordPitches(c, R + 12, rootDeg, voicing);
             chord.forEach((p, k) =>
-              add(half * 16 + h, k === 0 ? 1.35 : 1.05, p, 0.68 + (hi % 2) * 0.16, hi * 0.12, { micro: hi % 2 === 1 ? 0.02 : 0 })
+              add(half * 16 + h, k === 0 ? 1.25 : 0.95, p, 0.72 + (hi % 2) * 0.14, hi * 0.14, { micro: hi % 2 === 1 ? 0.02 : 0 })
             );
           });
         }
@@ -295,76 +429,284 @@ function genPattern(l: LayerDef, c: Ctx): { loop: number; notes: PN[] } {
     case 'LEAD': {
       loop = 64; let deg = 0; const base = R + 24; const starts = [0, 3, 6, 8, 11, 14];
       const call: PN[] = [];
-      starts.forEach((s, i) => { deg += rng.pick([-1, 0, 1, 2, -2]); call.push({ t: s, d: rng.pick([2, 3, 4]), p: degree(base, P.scale, clamp(deg, -3, 5)), v: 0.8, pri: i * 0.15 }); });
+      starts.forEach((s, i) => {
+        deg += isHorror ? rng.pick([-1, 1, 3, -2]) : rng.pick([-1, 0, 1, 2, -2]);
+        call.push({ t: s, d: rng.pick([2, 3, 4]), p: degree(base, P.scale, clamp(deg, -3, 6)), v: 0.82, pri: i * 0.15 });
+      });
       call.forEach((n) => add(n.t, n.d, n.p, n.v, n.pri));
-      call.forEach((n, i) => add(n.t + 32, n.d, i > 3 ? n.p + 2 : n.p, 0.75, n.pri + 0.05));
+      call.forEach((n, i) => add(n.t + 32, n.d, i > 3 ? n.p + (isHorror ? 1 : 2) : n.p, 0.76, n.pri + 0.05));
       break;
     }
     case 'ARP': {
-      if (isHypnoticFamily) {
-        loop = rng.pick([12, 16, 24]); // Polymetric warm analog VCO sequence
+      // Crystalline Buchla/FM pluck in upper register (R+24), brisk single-note broken arpeggio
+      const base = R + 24;
+      if (isHorror) {
+        loop = 12;
+        const horrorTones = [0, 1, 4, 6, 3, 1, 0, 4, 6, 1, 3, 0];
+        for (let s = 0; s < loop; s++) {
+          if (s % 4 === 3 && rng.chance(0.3)) continue;
+          const acc = s % 3 === 0;
+          add(s, 0.55, degree(base, P.scale, horrorTones[s % horrorTones.length]), acc ? 0.88 : 0.64, acc ? 0.05 : 0.22);
+        }
+      } else if (isCinematic) {
+        loop = 16;
+        const cinTones = [0, 2, 4, 6, 7, 6, 4, 2, 0, 2, 5, 7, 9, 7, 5, 2];
+        for (let s = 0; s < loop; s++) {
+          const acc = s % 4 === 0 || s % 4 === 2;
+          add(s, 0.65, degree(base, P.scale, cinTones[s % cinTones.length]), acc ? 0.86 : 0.62, acc ? 0.05 : 0.2);
+        }
+      } else if (isHypnoticFamily) {
+        loop = rng.pick([12, 16, 24]);
         const tonePools = [
-          [0, 0, 1, 4, 0, 1, 3, 4],
-          [0, 2, 4, 7, 0, 2, 5, 7],
-          [0, 1, 3, 6, 0, 1, 4, 6],
+          [0, 2, 4, 6, 4, 2],
+          [0, 1, 4, 5, 4, 1],
+          [0, 3, 4, 7, 4, 3],
+          [0, 2, 5, 7, 5, 2],
         ];
         const tones = rng.pick(tonePools);
-        const base = R + 24; // Elevated crystalline pluck register
+        const rot = rng.int(0, tones.length - 1);
         for (let s = 0; s < loop; s++) {
+          if (s % 4 === 0 && rng.chance(0.2)) continue; // Leave breathing room on downbeats
           const acc = s % 3 === 2 || s % 4 === 2;
           add(
             s,
-            acc ? 0.9 : 0.7,
-            degree(base, P.scale, tones[s % tones.length]),
-            acc ? 0.9 : 0.68 + (s % 2) * 0.08,
+            acc ? 0.65 : 0.5,
+            degree(base, P.scale, tones[(s + rot) % tones.length]),
+            acc ? 0.88 : 0.64 + (s % 2) * 0.08,
             acc ? 0.04 : 0.14 + (s % 4) * 0.12,
             { acc, micro: s % 3 === 2 ? 0.022 : s % 3 === 1 ? -0.015 : 0 }
           );
         }
       } else {
         const tones = [0, 2, 4, 7, 9, 7, 4, 2];
-        const base = R + 24; // Upper register crystalline pluck band
         loop = 16;
-        for (let s = 0; s < loop; s++) if (rng.chance(0.88)) add(s, 0.8, degree(base, P.scale, tones[s % tones.length]), 0.55 + (s % 3 === 0 ? 0.22 : 0), s % 3 === 0 ? 0.1 : rng.range(0.2, 0.95));
+        for (let s = 0; s < loop; s++) if (rng.chance(0.88)) add(s, 0.6, degree(base, P.scale, tones[s % tones.length]), 0.58 + (s % 3 === 0 ? 0.22 : 0), s % 3 === 0 ? 0.1 : rng.range(0.2, 0.95));
       }
       break;
     }
     case 'PAD': {
-      loop = 128;
+      loop = isAmbient ? 192 : 128;
+      const stepSpan = isAmbient ? 48 : 32;
+      const voicing = isHorror
+        ? [0, 1, 4, 6]
+        : isAmbient
+          ? [0, 2, 4, 6, 8]
+          : isCinematic
+            ? [0, 2, 4, 5, 7]
+            : [0, 2, 4, 6];
       for (let i = 0; i < 4; i++) {
-        const ps = chordPitches(c, R + 12, style.prog[i % style.prog.length], [0, 2, 4, 6]);
-        ps.forEach((p, k) => add(i * 32, 34, p, 0.55, k === 3 ? 0.5 : 0));
+        const rootDeg = style.prog[i % style.prog.length] ?? 0;
+        const ps = chordPitches(c, R + 12, rootDeg, voicing);
+        ps.forEach((p, k) =>
+          add(i * stepSpan, stepSpan + (isAmbient ? 6 : 2), k === voicing.length - 1 && i % 2 === 1 ? p + 12 : p, isAmbient ? 0.68 : 0.58, k >= 3 ? 0.32 : 0)
+        );
       }
       break;
     }
     case 'DUB': {
-      loop = 24;
-      if (isHypnoticFamily) {
-        const hitPatterns = [
-          [3, 11, 18],
-          [2, 10, 17],
-          [4, 12, 19],
-          [1.5, 9.5, 16.5],
-        ];
+      loop = isAmbient ? 32 : 24;
+      const voicing = isHorror ? [0, 1, 3, 6] : isCinematic ? [0, 2, 4, 6, 7] : [0, 2, 4, 6];
+      if (isHypnoticFamily || isDark) {
+        const hitPatterns = isAmbient
+          ? [
+              [2, 14, 26],
+              [4, 18, 28],
+              [3, 15, 25],
+            ]
+          : [
+              [3, 11, 18],
+              [2, 10, 17],
+              [4, 12, 19],
+              [1.5, 9.5, 16.5],
+            ];
         const hits = rng.pick(hitPatterns);
-        const rootDeg = style.prog[rng.int(0, style.prog.length - 1)] ?? 0;
-        hits.forEach((h, hi) =>
-          chordPitches(c, R + 12, rootDeg, [0, 2, 4, 6]).forEach((p, k) =>
-            add(h, 3.8, p, 0.76 - k * 0.04, hi * 0.14 + (k === 3 ? 0.1 : 0), { micro: 0.02 })
-          )
-        );
+        hits.forEach((h, hi) => {
+          const rootDeg = style.prog[(hi + rng.int(0, style.prog.length - 1)) % style.prog.length] ?? 0;
+          chordPitches(c, R + 12, rootDeg, voicing).forEach((p, k) =>
+            add(h, isAmbient ? 5.2 : 3.8, p, 0.76 - k * 0.04, hi * 0.14 + (k >= 3 ? 0.1 : 0), { micro: 0.02 })
+          );
+        });
       } else {
         const hits = [2, 5, 9, 14, 18, 21].sort(() => rng.next() - 0.5).slice(0, 3).sort((a, b) => a - b);
         hits.forEach((h, hi) => chordPitches(c, R + 12, style.prog[hi % style.prog.length], [0, 2, 4, 6, 8]).forEach((p, k) => add(h, 3, p, 0.7, hi * 0.3 + (k === 4 ? 0.1 : 0))));
       }
       break;
     }
-    case 'DRONE': loop = 64; add(0, 64, R + 12, 0.66, 0); add(0, 64, degree(R + 12, P.scale, 4), 0.48, 0.05); break;
-    case 'TEX': loop = 64; add(0, 64, 60, 0.5, 0); break;
-    case 'CRACKLE': for (let i = 0; i < 7; i++) add(rng.range(0, 16), 0.2, 80, 0.3 + rng.next() * 0.5, rng.next()); break;
+    case 'DRONE':
+      if (isAmbient) {
+        loop = 128;
+        // Two 4-bar evolving harmonic drone beds with shifting fifth, seventh, and ninth overtones
+        add(0, 66, R + 12, 0.76, 0);
+        add(0, 66, degree(R + 12, P.scale, 4), 0.62, 0.02);
+        add(0, 66, degree(R + 12, P.scale, 8), 0.48, 0.06);
+        add(64, 66, R + 12, 0.76, 0);
+        add(64, 66, degree(R + 12, P.scale, 3), 0.58, 0.02);
+        add(64, 66, degree(R + 12, P.scale, 6), 0.52, 0.06);
+      } else {
+        loop = 64;
+        add(0, 64, R + 12, 0.7, 0);
+        add(0, 64, degree(R + 12, P.scale, isHorror ? 1 : 4), 0.54, 0.04);
+        if (isHorror || isCinematic) {
+          add(0, 64, degree(R + 12, P.scale, isHorror ? 3 : 5), 0.46, 0.08);
+        }
+      }
+      break;
+    case 'TEX': loop = 64; add(0, 64, isHorror ? 48 : 60, 0.55, 0); break;
+    case 'CRACKLE': for (let i = 0; i < (isHorror ? 11 : 7); i++) add(rng.range(0, 16), 0.2, 80, 0.32 + rng.next() * 0.5, rng.next()); break;
   }
   N.sort((a, b) => a.t - b.t);
   return { loop, notes: N };
+}
+
+/**
+ * Deterministic phrase-level musical evolution across all layers (Foundation, Groove, Character, Harmony)
+ * so that consecutive phrase chunks (ci) and sections (si) never repeat a static pattern identically.
+ */
+function evolvePhraseNotes(
+  baseNotes: Note[],
+  loop: number,
+  l: LayerDef,
+  sec: Section,
+  si: number,
+  ci: number,
+  c: Ctx
+): Note[] {
+  const { rng, P, R, style } = c;
+  let ns = baseNotes.map((n) => ({ ...n }));
+  if (!ns.length) return ns;
+
+  const phase = si * 3 + ci;
+
+  if (l.id === 'ACID1' || l.id === 'ACID2') {
+    const base = R + 12;
+    const degShift = style.prog[(si + ci) % style.prog.length] ?? 0;
+    ns = ns.map((n, idx) => {
+      const copy = { ...n };
+      // Shift turnaround notes and alternate accent/slide articulations on every phrase chunk
+      if (ci > 0 && idx % 3 === (phase % 3)) {
+        const stepInBar = Math.floor(copy.t) % 16;
+        if (stepInBar >= 8) {
+          const newDeg = (degShift + idx + phase) % 7;
+          const oct = copy.p >= base + 12 ? 12 : 0;
+          copy.p = degree(base, P.scale, newDeg) + oct;
+        }
+      }
+      if ((idx + phase) % 5 === 0 && copy.t % 4 === 2) {
+        copy.acc = !copy.acc;
+        copy.v = copy.acc ? 0.96 : 0.74;
+      }
+      if (ci % 2 === 1 && idx === ns.length - 1 && copy.p < base + 18) {
+        copy.p += 12;
+        copy.slide = true;
+      }
+      return copy;
+    });
+    if (sec.role === 'VARIATION' || (ci > 0 && ci % 3 === 2)) {
+      const rotSteps = ((phase % 3) + 1) * 2;
+      ns.forEach((n) => {
+        n.t = (n.t + rotSteps) % loop;
+      });
+      ns.sort((a, b) => a.t - b.t);
+    }
+    return ns;
+  }
+
+  if (l.group === 'Foundation') {
+    if (l.id === 'SUB' || l.id === 'MIDBASS' || l.id === 'RUMBLE') {
+      const tailDegrees = [1, 4, 3, 6, 2];
+      const targetDeg = tailDegrees[phase % tailDegrees.length];
+      ns = ns.map((n, idx) => {
+        const copy = { ...n };
+        if (l.id !== 'RUMBLE' && idx === ns.length - 1 && (ci > 0 || si > 0)) {
+          copy.p = degree(R, P.scale, targetDeg);
+        } else if (l.id === 'MIDBASS' && (idx + phase) % 4 === 0 && copy.t % 4 !== 2) {
+          copy.p = degree(R, P.scale, (idx + phase) % 5);
+        }
+        return copy;
+      });
+    } else if (l.id === 'KICK' && (ci % 2 === 1 || sec.role === 'VARIATION' || sec.role === 'DROP_PEAK')) {
+      const ghostStep = phase % 2 === 0 ? 15.5 : 14.5;
+      if (!ns.some((n) => Math.abs(n.t - ghostStep) < 0.25)) {
+        ns.push({ t: ghostStep, d: 0.5, p: 36, v: 0.42 });
+        ns.sort((a, b) => a.t - b.t);
+      }
+    }
+    return ns;
+  }
+
+  if (l.group === 'Groove') {
+    if (ci > 0 || si > 0) {
+      const rot = ((phase % 3) + 1) * 2;
+      if (l.id === 'PERC1' || l.id === 'PERC2' || l.id === 'CONGA' || l.id === 'TOM' || l.id === 'CLANG') {
+        ns.forEach((n, idx) => {
+          if (ci > 0) n.t = (n.t + (ci % 2 === 1 ? 2 : rot)) % loop;
+          if ((idx + phase) % 3 === 0) n.v = clamp(n.v + (phase % 2 === 0 ? 0.08 : -0.06), 0.28, 0.98);
+        });
+        ns.sort((a, b) => a.t - b.t);
+      } else if (l.id === 'HAT_C' || l.id === 'SHAKER' || l.id === 'RIDE') {
+        ns.forEach((n, idx) => {
+          if ((idx + phase) % 4 === 0) n.v = clamp(n.v + (ci % 2 === 0 ? 0.09 : -0.07), 0.22, 0.92);
+        });
+      } else if ((l.id === 'SNARE' || l.id === 'CLAP') && ci % 2 === 1) {
+        const fillStep = phase % 2 === 0 ? 15 : 13.5;
+        if (!ns.some((n) => Math.abs(n.t - fillStep) < 0.25)) {
+          ns.push({ t: fillStep, d: 0.5, p: l.id === 'CLAP' ? 39 : 38, v: 0.46 });
+          ns.sort((a, b) => a.t - b.t);
+        }
+      }
+    }
+    return ns;
+  }
+
+  if (l.group === 'Character') {
+    // STAB, ARP, LEAD phrase evolution
+    if (l.id === 'ARP') {
+      const base = R + 24;
+      ns.forEach((n, idx) => {
+        if ((idx + phase) % 4 === 0 && (ci > 0 || si > 0)) {
+          n.p = degree(base, P.scale, (idx + phase * 2) % 8);
+          n.acc = (idx + phase) % 3 === 0;
+        }
+      });
+      if (ci % 2 === 1) {
+        ns.forEach((n) => {
+          n.t = (n.t + 2) % loop;
+        });
+        ns.sort((a, b) => a.t - b.t);
+      }
+    } else if (l.id === 'STAB' || l.id === 'LEAD') {
+      const shift = ((ci + si) % 2 === 1) ? 2 : 0;
+      if (shift > 0) {
+        ns.forEach((n, idx) => {
+          if (idx % 2 === 1) n.t = (n.t + shift) % loop;
+        });
+        ns.sort((a, b) => a.t - b.t);
+      }
+      if (sec.role === 'DROP_PEAK') ns = mutate(ns, loop, 'acc', rng);
+      else if (sec.role === 'OUTRO') ns = mutate(ns, loop, 'frag', rng);
+    }
+    return ns;
+  }
+
+  if (l.group === 'Harmony') {
+    // PAD, DUB, DRONE harmonic inversion & timing evolution across phrases
+    if (l.id === 'DUB' && (ci > 0 || si > 0)) {
+      const stepShift = (phase % 3) === 1 ? 1 : (phase % 3) === 2 ? 2 : 0;
+      ns.forEach((n, idx) => {
+        if (stepShift > 0) n.t = (n.t + stepShift) % loop;
+        if (idx % 4 === (phase % 4) && n.p < R + 30) n.p += 12;
+      });
+      ns.sort((a, b) => a.t - b.t);
+    } else if ((l.id === 'PAD' || l.id === 'DRONE') && (ci > 0 || si > 0)) {
+      ns.forEach((n, idx) => {
+        if (idx > 0 && (idx + phase) % 3 === 0) {
+          n.v = clamp(n.v + (phase % 2 === 0 ? 0.06 : -0.05), 0.35, 0.85);
+        }
+      });
+    }
+  }
+
+  return ns;
 }
 
 // ───────────────────────── sections ─────────────────────────
@@ -448,39 +790,67 @@ function fillOn(tracks: Track[], ids: string[], a: number, bars: number, rng: Rn
   tr.clips.push(mkClip(a, bars, bars * 16, fillNotes(bars, rng, base, tr.synth === 'tom' || tr.synth === 'perc' || tr.synth === 'conga'), label));
 }
 
-export function addTransition(tracks: Track[], style: StyleDef, B: number, delta: number, room: number, rng: Rng, force?: 'up' | 'down' | 'mid') {
+export function addTransition(tracks: Track[], style: StyleDef, B: number, delta: number, room: number, rng: Rng, force?: 'up' | 'down' | 'mid', keyRoot = 36) {
   const T = (id: string) => tracks.find((t) => t.layer === id);
   const kind = force ?? (delta > 0.25 ? 'up' : delta < -0.2 ? 'down' : 'mid');
   const used = new Set<string>();
   const isHypnotic = style.id === 'hypnotic' || style.id === 'minimal_groover' || style.id === 'mental_tribal';
+  const isAmbientOrDub = style.id === 'ambient' || style.id === 'dub' || style.id === 'melodic_deep';
+  const isDarkVault = style.id === 'industrial' || style.id === 'horror_vault' || style.id === 'cinematic_dark';
+  const rootSub = Math.max(30, Math.min(45, keyRoot <= 35 ? keyRoot + 12 : keyRoot));
+  const rootMid = rootSub + 12;
+  const rootHigh = rootSub + 24;
 
   if (kind === 'up') {
-    const rb = isHypnotic ? Math.min(4, Math.floor(room)) : Math.max(2, Math.min(8, Math.floor(room)));
-    atomClip(T('RISER'), B - rb, rb, 60, isHypnotic ? 0.55 : 0.85, 'Riser Atom');
+    const rb = isAmbientOrDub ? Math.min(8, Math.max(4, Math.floor(room))) : isHypnotic ? Math.min(4, Math.floor(room)) : Math.max(2, Math.min(8, Math.floor(room)));
+    const riserVel = isAmbientOrDub ? 0.56 : isHypnotic ? 0.64 : isDarkVault ? 0.84 : 0.78;
+    // 1. Key-locked Analog Filter Sweep & Dark Swarm Riser before the drop [B - rb, B)
+    atomClip(T('RISER'), B - rb, rb, rootHigh, riserVel, isAmbientOrDub ? 'Atmospheric Filter Swell' : isDarkVault ? 'Vault Tension Riser' : 'Analog Sweep Riser');
     const fb = Math.max(1, Math.min(2, Math.floor(room)));
-    if (isHypnotic) {
-      // In hypnotic techno, use dark tom/conga rolls instead of aggressive snare rolls
+    if (isAmbientOrDub) {
+      fillOn(tracks, ['PERC1', 'PERC2', 'TOM', 'SHAKER'], B - fb, fb, rng, 'Dub Perc Swell', used);
+    } else if (isHypnotic) {
       fillOn(tracks, ['TOM', 'CONGA', 'PERC1', 'PERC2'], B - fb, fb, rng, 'Tribal Roll', used);
     } else {
       fillOn(tracks, ['SNARE', 'CLAP', 'PERC1', 'HAT_C'], B - fb, fb, rng, 'Snare Roll', used);
       fillOn(tracks, ['TOM', 'PERC1', 'CONGA', 'PERC2'], B - fb, fb, rng, 'Perc Roll', used);
     }
     const vb = Math.min(style.void, Math.max(1, Math.floor(room)));
-    for (const id of FOUNDATION) { const t = T(id); if (t) carve(t, B - vb, B); }
-    atomClip(T('CRASH'), B - 1, 1, 1, isHypnotic ? 0.48 : 0.8, 'Reverse Swell', 16);
-    atomClip(T('IMPACT'), B, 2, 60, isHypnotic ? 0.75 : 1, 'Sub Impact', 16);
+    if (!isAmbientOrDub) {
+      for (const id of FOUNDATION) { const t = T(id); if (t) carve(t, B - vb, B); }
+    } else {
+      const k = T('KICK'); if (k) carve(k, B - 1, B);
+    }
+    // 2. Key-locked Sub-Drop Impact hits at bar B in the exact root key of the track
+    const impVel = isAmbientOrDub ? 0.68 : isHypnotic ? 0.82 : 0.94;
+    atomClip(T('IMPACT'), B, 2, rootSub, impVel, isDarkVault ? 'Vault Seismic Impact' : 'Key-Locked Sub Impact', 24);
+    // 3. Bronze Shimmer Crash or Reverse Cymbal Swell
     const cr = T('CRASH');
-    if (cr && !isHypnotic) {
-      carve(cr, B, B + 2);
-      cr.clips.push(mkClip(B, 2, 32, [{ t: 0, d: 16, p: 0, v: 0.85 }], 'Crash'));
+    if (cr) {
+      if (isHypnotic || isAmbientOrDub) {
+        atomClip(cr, B - 1, 1, 1, isAmbientOrDub ? 0.48 : 0.56, 'Reverse Bronze Swell', 16);
+      } else {
+        carve(cr, B, B + 2);
+        cr.clips.push(mkClip(B, 2, 32, [{ t: 0, d: 24, p: rootHigh, v: isDarkVault ? 0.78 : 0.72 }], 'Dark Bronze Crash'));
+      }
     }
   } else if (kind === 'down') {
-    atomClip(T('DOWNLIFT'), B, 4, 60, isHypnotic ? 0.52 : 0.8, 'Downlifter + Noise Wash', 64);
-    const im = T('IMPACT'); if (im) atomClip(im, B, 1, 60, isHypnotic ? 0.42 : 0.55, 'Soft Impact', 16);
+    // Key-locked Sub-Brass & Air Downlifter pitches down over 4 bars on breakdown entry
+    const dlVel = isAmbientOrDub ? 0.62 : isHypnotic ? 0.68 : 0.82;
+    atomClip(T('DOWNLIFT'), B, 4, rootMid, dlVel, 'Analog Sub-Brass Downlifter', 64);
   } else {
-    atomClip(T('IMPACT'), B, 1, 60, isHypnotic ? 0.38 : 0.5, 'Phrase Hit', 16);
+    // Mid-energy section boundary: subtle reverse bronze swell or key-locked sub pulse
+    if (rng.chance(0.5)) {
+      if (isAmbientOrDub || isHypnotic) {
+        atomClip(T('CRASH'), B - 1, 1, 1, 0.42, 'Reverse Phrase Swell', 16);
+      } else {
+        atomClip(T('CRASH'), B, 1, rootHigh, 0.54, 'Bronze Boundary Shimmer', 16);
+      }
+    } else {
+      atomClip(T('IMPACT'), B, 1, rootSub, isAmbientOrDub ? 0.44 : 0.56, 'Sub-Root Boundary Thud', 14);
+    }
     if (rng.chance(0.6)) {
-      if (isHypnotic) fillOn(tracks, ['TOM', 'CONGA', 'PERC1', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
+      if (isHypnotic || isAmbientOrDub) fillOn(tracks, ['TOM', 'CONGA', 'PERC1', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
       else fillOn(tracks, ['PERC1', 'SNARE', 'CLAP', 'HAT_C'], B - 1, 1, rng, 'Phrase Fill', used);
     }
   }
@@ -603,10 +973,17 @@ export function generate(P: ComposeParams, o: GenOpts = {}): GenResult {
   else { const r = buildSections(P, rootRng); sections = r.sections; formId = r.formId; }
   const R = 24 + P.key;
 
-  const coreAlways = P.style === 'hypnotic'
-    ? ['KICK', 'SUB', 'RUMBLE', 'TOM', 'CONGA', 'HAT_C', 'SHAKER', 'PERC1', 'PERC2', 'ARP', 'STAB', 'DUB', 'ACID1', 'DRONE', ...ATOM_LAYERS]
-    : ['KICK', 'SUB', 'HAT_C', 'PERC1', ...ATOM_LAYERS];
-  const selected = (o.layers ?? style.layers).filter(
+  const isDarkFlavor = P.scale === 'locrian' || P.scale === 'octatonic' || P.scale === 'harmonicMinor' || P.scale === 'phrygianDominant' || P.dirt >= 0.65;
+  const isAmbientStyle = P.style === 'ambient';
+  const coreAlways = isAmbientStyle
+    ? ['PAD', 'DRONE', 'DUB', 'ARP', 'TEX', 'CRACKLE', 'SUB', 'RUMBLE', 'KICK', 'HAT_C', 'PERC1', ...ATOM_LAYERS]
+    : P.style === 'hypnotic'
+      ? ['KICK', 'SUB', 'RUMBLE', 'TOM', 'CONGA', 'HAT_C', 'SHAKER', 'PERC1', 'PERC2', 'ARP', 'STAB', 'DUB', 'ACID1', 'DRONE', ...ATOM_LAYERS]
+      : isDarkFlavor
+        ? ['KICK', 'SUB', 'RUMBLE', 'HAT_C', 'PERC1', 'DRONE', 'PAD', ...ATOM_LAYERS]
+        : ['KICK', 'SUB', 'HAT_C', 'PERC1', ...ATOM_LAYERS];
+  const basePool = o.layers ?? (isDarkFlavor ? Array.from(new Set([...style.layers, 'DRONE', 'PAD', 'RUMBLE', 'CLANG'])) : style.layers);
+  const selected = basePool.filter(
     (id) => coreAlways.includes(id) || new Rng(hash(P.seed, P.style, id, 'allocation')).next() < 0.65 + 0.35 * P.density
   );
   const defs = selected.map((id, i) => ({ l: LAYERS[id], i })).sort((a, b) => GROUP_ORDER.indexOf(a.l.group) - GROUP_ORDER.indexOf(b.l.group) || a.i - b.i).map((x) => x.l);
@@ -627,32 +1004,47 @@ export function generate(P: ComposeParams, o: GenOpts = {}): GenResult {
 
   // 1) peak-first: densest loop per layer, 2) subtractive clips per section with independent lifecycles
   const hypImmediate = new Set(['KICK', 'RUMBLE', 'SUB', 'TOM', 'CONGA', 'ARP', 'STAB', 'DUB', 'DRONE', 'HAT_C', 'SHAKER', 'PERC1']);
+  const ambImmediate = new Set(['PAD', 'DRONE', 'DUB', 'TEX', 'CRACKLE', 'ARP', 'SUB', 'RUMBLE']);
   for (const tr of tracks) {
     const l = LAYERS[tr.layer];
     if (l.group === 'Transition') continue;
-    const pat = genPattern(l, { rng: new Rng(hash(P.seed, l.id, 'pat')), style, P, R });
+    const pat = genPattern(l, { rng: new Rng(hash(P.seed, P.style, P.scale, l.id, 'pat')), style, P, R });
     const lv = levels[l.id];
     sections.forEach((sec, si) => {
       if (lv[si] < 0.02) return;
       const rng = new Rng(hash(P.seed, l.id, si, secSeed[sec.id] ?? 0));
       const prev = si > 0 ? lv[si - 1] : 0; const next = si < sections.length - 1 ? lv[si + 1] : 0;
       let start = sec.start; let end = sec.start + sec.bars;
+      const isImm = (P.style === 'hypnotic' && hypImmediate.has(l.id)) || (isAmbientStyle && ambImmediate.has(l.id));
       // staggered entrance
-      if (si === 0 && l.id !== 'KICK' && !(P.style === 'hypnotic' && hypImmediate.has(l.id))) {
+      if (si === 0 && l.id !== 'KICK' && !isImm) {
         const d = l.group === 'Texture' || l.group === 'Harmony' ? rng.pick([0, 0, 4]) : rng.pick([4, 8, 8, 12]);
         if (d < sec.bars * 0.6) start += d;
-      } else if (prev < 0.02 && sec.bars >= 16 && l.group !== 'Foundation' && !(P.style === 'hypnotic' && hypImmediate.has(l.id))) {
+      } else if (prev < 0.02 && sec.bars >= 16 && l.group !== 'Foundation' && !isImm) {
         const d = rng.pick([0, 0, 4, 8]); if (d < sec.bars / 2) start += d;
       }
       // staggered exit
       if (sec.role === 'OUTRO') {
-        const frac = l.id === 'KICK' ? 1 : l.group === 'Character' ? rng.range(0.25, 0.45) : l.group === 'Harmony' ? rng.range(0.6, 0.8) : l.group === 'Foundation' ? rng.range(0.7, 0.85) : rng.range(0.5, 0.85);
+        const frac =
+          isAmbientStyle && (l.id === 'PAD' || l.id === 'DRONE' || l.id === 'TEX')
+            ? 1
+            : l.id === 'KICK'
+              ? 1
+              : l.group === 'Character'
+                ? rng.range(0.25, 0.45)
+                : l.group === 'Harmony'
+                  ? rng.range(0.6, 0.85)
+                  : l.group === 'Foundation'
+                    ? rng.range(0.7, 0.85)
+                    : rng.range(0.5, 0.85);
         end = sec.start + Math.max(4, Math.round((sec.bars * frac) / 2) * 2);
       } else if (next < 0.02 && sec.bars >= 16 && l.group !== 'Harmony' && l.group !== 'Texture') {
         const d = rng.pick([0, 0, 2, 4]); if (d < sec.bars / 2) end -= d;
       }
       if (end - start < 1) return;
-      const ph = Math.min(l.phrase, sec.bars);
+      // Ambient Techno uses longer loop phrases for deep evolving harmonic & rhythmic arcs
+      const targetPhrase = isAmbientStyle ? Math.max(l.phrase * 2, l.group === 'Harmony' ? 32 : 16) : l.phrase;
+      const ph = Math.min(targetPhrase, sec.bars);
       let cur = start; let ci = 0;
       while (cur < end - 1e-6) {
         const gridEnd = sec.start + (Math.floor((cur - sec.start) / ph + 1e-9) + 1) * ph;
@@ -660,15 +1052,7 @@ export function generate(P: ComposeParams, o: GenOpts = {}): GenResult {
         const prog = (ce - sec.start) / sec.bars;
         const lvc = clamp(lv[si] * (0.78 + 0.22 * prog));
         let notes = thin(pat.notes as PN[], lvc);
-        if (l.melodic && l.group === 'Character') {
-          if (sec.role === 'DROP_PEAK') { notes = mutate(notes, pat.loop, 'acc', rng); if (ci % 2 === 1) notes = mutate(notes, pat.loop, 'oct', rng); }
-          else if (sec.role === 'VARIATION') notes = mutate(notes, pat.loop, 'rot', rng);
-          else if (sec.role === 'OUTRO') notes = mutate(notes, pat.loop, 'frag', rng);
-        } else if (sec.role === 'VARIATION' && l.group === 'Groove') notes = mutate(notes, pat.loop, 'rot', rng);
-        if (ci > 0 && rng.chance(0.4 + P.complexity * 0.35)) {
-          const k = l.melodic && l.group !== 'Harmony' ? rng.pick(['rest', 'oct', 'rot'] as const) : l.group === 'Groove' ? rng.pick(['rest', 'rot'] as const) : 'rest';
-          notes = mutate(notes, pat.loop, k, rng);
-        }
+        notes = evolvePhraseNotes(notes, pat.loop, l, sec, si, ci, { rng, style, P, R });
         tr.clips.push(mkClip(cur, ce - cur, pat.loop, notes, `${l.name} · ${sec.name}`, cur * 16));
         cur = ce; ci++;
       }
@@ -687,7 +1071,8 @@ export function generate(P: ComposeParams, o: GenOpts = {}): GenResult {
       for (const id of FOUNDATION) { const t = T(id); if (t) carve(t, e - cut, e); }
       const used = new Set<string>();
       fillOn(tracks, ['SNARE', 'CLAP', 'PERC1', 'HAT_C'], e - (p % 32 === 0 ? 2 : 1), p % 32 === 0 ? 2 : 1, frng, 'Phrase Fill', used);
-      if (p % 32 === 0 && p < sec.bars) atomClip(T('IMPACT'), e, 1, 60, 0.45, '32-bar Hit', 16);
+      const rootSub = Math.max(30, Math.min(45, R <= 35 ? R + 12 : R));
+      if (p % 32 === 0 && p < sec.bars) atomClip(T('IMPACT'), e, 1, rootSub, 0.45, '32-bar Sub Hit', 16);
     }
   });
 
@@ -695,7 +1080,7 @@ export function generate(P: ComposeParams, o: GenOpts = {}): GenResult {
   sections.forEach((sec, si) => {
     if (si === sections.length - 1) return;
     const B = sec.start + sec.bars; const d = sections[si + 1].energy - sec.energy;
-    addTransition(tracks, style, B, d, sec.bars, new Rng(hash(P.seed, 'tr', si, secSeed[sec.id] ?? 0)));
+    addTransition(tracks, style, B, d, sec.bars, new Rng(hash(P.seed, 'tr', si, secSeed[sec.id] ?? 0)), undefined, R);
   });
 
   const scoreEnd=sections.reduce((end,s)=>Math.max(end,s.start+s.bars),0);
@@ -713,6 +1098,33 @@ export function newProject(P: ComposeParams, o: GenOpts = {}, name?: string): Pr
     v: 1, id: uid('project'), revision: 1, name: name ?? `${STYLES[P.style].name} · ${P.seed}`, params: P, formId: g.formId, sections: g.sections, tracks: g.tracks, auto: g.auto,
     sc: defaultSc(), scOn: true, overrides: o.overrides ?? {}, secSeed: o.secSeed ?? {}, loop: { on: false, a: 0, b: 0 },
   };
+}
+
+/**
+ * Creates a complete 'Ambient Techno' project template with extended loop phrases (192 bars, 'ambient' form),
+ * deep spatial dub/reverb depth, and prioritized PAD & DRONE atmospheric layers.
+ */
+export function createAmbientTechnoTemplate(seed = 2049): Project {
+  const base = defaultParams('ambient', seed);
+  const P: ComposeParams = {
+    ...base,
+    style: 'ambient',
+    form: 'ambient',
+    bpm: 120,
+    key: 2, // D Dorian / Minor
+    scale: 'dorian',
+    bars: 192,
+    seed,
+    density: 0.62,
+    complexity: 0.56,
+    swing: 0.56,
+    acid: 0.42,
+    poly: 0.64,
+    dirt: 0.14,
+    depth: 0.85,
+    mode: 'hybrid',
+  };
+  return newProject(P, {}, `Ambient Techno · Horizon ${seed}`);
 }
 
 const overlaps = (c:Clip,s:Section)=>c.start<s.start+s.bars&&c.start+c.len>s.start;
@@ -775,18 +1187,25 @@ export function mergeGenerated(old: Project, gen: GenResult, keepStructure: bool
     if (lockedSecs.length) clips = [...nt.clips.filter((c) => !lockedSecs.some((s) => overlaps(c, s))), ...ot.clips.filter((c) => lockedSecs.some((s) => overlaps(c, s)))];
     return { ...ot, clips };
   });
-  for (const ot of old.tracks) if (!gen.tracks.some((t) => t.id === ot.id)) tracks.push(ot);
+  for (const ot of old.tracks) {
+    if (!gen.tracks.some((t) => t.id === ot.id) && (!ot.id.startsWith('t_') || ot.lock)) {
+      tracks.push(ot);
+    }
+  }
+  const finalTrackIds = new Set(tracks.map((t) => t.id));
   const lockedIds = new Set(tracks.filter((t) => t.lock).map((t) => t.id));
   const auto = lockedSecs.length
-    ? old.auto.map((oldLane) => {
-        if (lockedIds.has(oldLane.track)) return oldLane;
-        const genLane = gen.auto.find((a) => a.id === oldLane.id || (a.track === oldLane.track && a.param === oldLane.param));
-        if (!genLane) return oldLane;
-        return spliceLaneWithLocks(oldLane, genLane.pts, lockedSecs);
-      })
+    ? old.auto
+        .filter((oldLane) => oldLane.track === 'master' || finalTrackIds.has(oldLane.track))
+        .map((oldLane) => {
+          if (lockedIds.has(oldLane.track)) return oldLane;
+          const genLane = gen.auto.find((a) => a.id === oldLane.id || (a.track === oldLane.track && a.param === oldLane.param));
+          if (!genLane) return oldLane;
+          return spliceLaneWithLocks(oldLane, genLane.pts, lockedSecs);
+        })
     : [
-        ...gen.auto.filter((a) => !lockedIds.has(a.track)),
-        ...old.auto.filter((a) => lockedIds.has(a.track) || (a.track !== 'master' && !gen.tracks.some((t) => t.id === a.track))),
+        ...gen.auto.filter((a) => !lockedIds.has(a.track) && (a.track === 'master' || finalTrackIds.has(a.track))),
+        ...old.auto.filter((a) => finalTrackIds.has(a.track) && (lockedIds.has(a.track) || !gen.tracks.some((t) => t.id === a.track))),
       ];
   const sections = keepStructure ? gen.sections.map((s) => { const o = old.sections.find((x) => x.id === s.id); return o?.lock ? o : o ? { ...s, lock: o.lock } : s; }) : gen.sections;
   return { tracks, auto, sections, formId: gen.formId };
