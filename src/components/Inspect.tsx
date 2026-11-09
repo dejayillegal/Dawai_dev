@@ -18,6 +18,7 @@ import {
   saveDevicePreset,
   type DevicePreset,
 } from '../engine/presets';
+import { TrackColorPickerTrigger } from './TrackColorDialog';
 
 const ALL_SYNTHS: { id: SynthKind; label: string; cat: string }[] = [
   { id: 'kick', label: '909 / Industrial Kick', cat: 'Drums & Low' },
@@ -1328,6 +1329,7 @@ export function Inspect() {
             >
               + Clip
             </Btn>
+            <TrackColorPickerTrigger track={t} label="🎨 Track Color" compact />
           </div>
           <label className="block text-[10px] uppercase tracking-wider text-slate-400">
             Synth Engine ({def?.reg ?? 'user'})
@@ -1499,7 +1501,15 @@ export function Inspect() {
     const tb = totalBars(p);
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Section title="Clip" right={<Badge color={t.color}>{t.name}</Badge>}>
+        <Section
+          title="Clip"
+          right={
+            <div className="flex items-center gap-1.5">
+              <TrackColorPickerTrigger track={t} label="🎨 Track Color" compact />
+              <Badge color={t.color}>{t.name}</Badge>
+            </div>
+          }
+        >
           <input
             value={c.label}
             onChange={(e) => up({ label: e.target.value }, 'label')}

@@ -169,5 +169,34 @@ describe('Settings & Metronome Engine', () => {
     expect(energyAtStep0).toBeGreaterThan(0.1);
     expect(energyAtStep4).toBeGreaterThan(0.1);
   });
+
+  it('normalizes track hex colors, blends Piano Roll background tints, and updates track color for all associated clips', async () => {
+    const {
+      normalizeHexColor,
+      hexToRgba,
+      blendHexWithDarkBase,
+      TRACK_COLOR_PALETTE,
+    } = await import('../src/components/TrackColorDialog');
+    const { defaultParams, newProject } = await import('../src/engine/composer');
+    const { applyCommand } = await import('../src/engine/commands');
+
+    expect(TRACK_COLOR_PALETTE.length).toBeGreaterThanOrEqual(24);
+    expect(normalizeHexColor('f59e0b')).toBe('#f59e0b');
+    expect(normalizeHexColor('#F0A')).toBe('#ff00aa');
+    expect(hexToRgba('#06b6d4', 0.25)).toBe('rgba(6, 182, 212, 0.25)');
+    const blended = blendHexWithDarkBase('#ef4444', '#0e1216', 0.14);
+    expect(blended).toMatch(/^#[0-9a-f]{6}$/);
+    expect(blended).not.toBe('#0e1216');
+
+    const proj = newProject(defaultParams('hypnotic', 777));
+    const targetTrack = proj.tracks[0];
+    const updated = applyCommand(proj, {
+      type: 'SET_TRACK',
+      id: targetTrack.id,
+      patch: { color: '#ec4899' },
+    });
+    expect(updated.tracks[0].color).toBe('#ec4899');
+  });
 });
+
 

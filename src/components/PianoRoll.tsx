@@ -8,6 +8,7 @@ import { Btn } from '../ui';
 import { cn } from '../utils/cn';
 import { exportClipToMidi } from '../engine/midiExport';
 import { computeAnalyticalClipWaveform, renderOfflineClipWaveform } from '../engine/clipWaveform';
+import { blendHexWithDarkBase, hexToRgba, TrackColorPickerTrigger } from './TrackColorDialog';
 
 const GUT = 38, RH = 14, VEL_H = 54;
 const SINGLE = ['kick', 'hat', 'ohat', 'ride', 'shaker', 'clap', 'snare', 'clang', 'crackle', 'riser', 'impact', 'downlift', 'crash'];
@@ -149,17 +150,20 @@ export function PianoRoll() {
     const g = c.getContext('2d')!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    g.fillStyle = '#0e1216';
+    const baseBg = blendHexWithDarkBase(found.t.color, '#0e1216', 0.14);
+    const darkRowBg = blendHexWithDarkBase(found.t.color, '#0b0e12', 0.12);
+    const lightRowBg = blendHexWithDarkBase(found.t.color, '#11161b', 0.16);
+    g.fillStyle = baseBg;
     g.fillRect(0, 0, W, H);
     for (let r = 0; r < rows; r++) {
       const pitch = range.hi - r;
       const y = r * RH;
       if (!single) {
         const pc = pitch % 12;
-        g.fillStyle = [1, 3, 6, 8, 10].includes(pc) ? '#0b0e12' : '#11161b';
+        g.fillStyle = [1, 3, 6, 8, 10].includes(pc) ? darkRowBg : lightRowBg;
         g.fillRect(GUT, y, W - GUT, RH);
         if (scale.has(pc)) {
-          g.fillStyle = 'rgba(6,182,212,0.06)';
+          g.fillStyle = hexToRgba(found.t.color, 0.08);
           g.fillRect(GUT, y, W - GUT, RH);
         }
         g.fillStyle = [1, 3, 6, 8, 10].includes(pc) ? '#1a2027' : '#cfd6de';
@@ -172,7 +176,7 @@ export function PianoRoll() {
       }
     }
     if (single) {
-      g.fillStyle = '#11161b';
+      g.fillStyle = lightRowBg;
       g.fillRect(GUT, 0, W - GUT, noteH);
       g.fillStyle = '#7b8794';
       g.font = '9px Inter, sans-serif';
@@ -181,7 +185,7 @@ export function PianoRoll() {
     const total = Math.ceil((W - GUT) / SW);
     for (let s = 0; s <= total; s++) {
       const x = GUT + s * SW;
-      g.strokeStyle = s % 16 === 0 ? '#3a4656' : s % 4 === 0 ? '#27303b' : '#181e25';
+      g.strokeStyle = s % 16 === 0 ? hexToRgba(found.t.color, 0.35) : s % 4 === 0 ? '#27303b' : '#181e25';
       g.beginPath();
       g.moveTo(x + 0.5, 0);
       g.lineTo(x + 0.5, H);
@@ -353,6 +357,7 @@ export function PianoRoll() {
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <TrackColorPickerTrigger track={trk} label="Color" compact />
                 {trk.clips[0] && (
                   <Btn
                     small
@@ -503,10 +508,12 @@ export function PianoRoll() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line px-2 py-1">
-        <span className="mr-1 flex items-center gap-1 text-[11px] font-semibold">
+        <span className="mr-0.5 flex items-center gap-1 text-[11px] font-semibold">
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: t.color }} />
           {t.name}
         </span>
+        {/* Track & Clip Color Picker Dialog Trigger */}
+        <TrackColorPickerTrigger track={t} label="🎨 Track Color" compact />
         {/* Clip Switcher for current track */}
         <select
           aria-label="Select clip on track"
@@ -675,7 +682,10 @@ export function PianoRoll() {
           {notes.length} notes · {KEY_NAMES[p.params.key]} {p.params.scale}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto bg-[#0e1216]">
+      <div
+        className="min-h-0 flex-1 overflow-auto transition-colors"
+        style={{ background: blendHexWithDarkBase(t.color, '#0e1216', 0.14) }}
+      >
         <canvas
           ref={cv}
           onPointerDown={onDown}
