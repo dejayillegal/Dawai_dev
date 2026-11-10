@@ -190,13 +190,14 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const g2 = gain(ctx, 0.24);
       o2.connect(g2);
       const subLp = filt(ctx, 'lowpass', Math.min(220, hz * 3.2), 0.75);
+      bindCutoff(ctl, subLp, cl, true);
       const g = gz(ctx, t);
       const e = adsr(g.gain, t, 0.008, v * 0.58, 0.08, 0.85, durSec, 0.08);
       o.connect(subLp);
       g2.connect(subLp);
       subLp.connect(g);
       g.connect(out);
-      done(env, [o, o2], e, out);
+      done(env, [o, o2], e, out, cl);
       break;
     }
 
@@ -518,6 +519,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       car.connect(mMix);
 
       const bp = filt(ctx, 'bandpass', open ? 6800 : 7600, 0.85);
+      bindCutoff(ctl, bp, cl, true);
       const hp = filt(ctx, 'highpass', open ? 4800 : 5600, 0.65);
       const silkLp = filt(ctx, 'lowpass', 13200, 0.6);
       const g = gz(ctx, t);
@@ -531,7 +533,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       hp.connect(silkLp);
       silkLp.connect(g);
       g.connect(out);
-      done(env, [s, car, mod], t + dur + 0.02, out);
+      done(env, [s, car, mod], t + dur + 0.02, out, cl);
       break;
     }
 
@@ -552,6 +554,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       s.connect(nGain);
 
       const bp = filt(ctx, 'bandpass', 5400, 0.7);
+      bindCutoff(ctl, bp, cl, true);
       const silkLp = filt(ctx, 'lowpass', 12400, 0.65);
       const g = gz(ctx, t);
       g.gain.linearRampToValueAtTime(v * 0.18, t + 0.0025);
@@ -562,13 +565,14 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       bp.connect(silkLp);
       silkLp.connect(g);
       g.connect(out);
-      done(env, [car, mod, s], t + 0.58, out);
+      done(env, [car, mod, s], t + 0.58, out, cl);
       break;
     }
 
     case 'shaker': {
       const s = noiseSrc(env, t);
       const bp = filt(ctx, 'bandpass', 5200, 1.15);
+      bindCutoff(ctl, bp, cl, true);
       const silkLp = filt(ctx, 'lowpass', 11800, 0.65);
       const g = gz(ctx, t);
       g.gain.linearRampToValueAtTime(v * 0.25, t + 0.011);
@@ -578,7 +582,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       bp.connect(silkLp);
       silkLp.connect(g);
       g.connect(out);
-      done(env, [s], t + 0.085, out);
+      done(env, [s], t + 0.085, out, cl);
       break;
     }
 
@@ -587,6 +591,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const s = noiseSrc(env, t);
       const bp = filt(ctx, 'bandpass', 1080, 1.1);
       const lp = filt(ctx, 'lowpass', 5800, 0.7);
+      bindCutoff(ctl, lp, cl, true);
       const g = gz(ctx, t);
       const p = g.gain;
       const a = v * 0.56;
@@ -602,7 +607,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       bp.connect(lp);
       lp.connect(g);
       g.connect(out);
-      done(env, [s], t + 0.23, out);
+      done(env, [s], t + 0.23, out, cl);
       break;
     }
 
@@ -617,6 +622,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const s = noiseSrc(env, t);
       const bp = filt(ctx, 'bandpass', 1850, 0.85);
       const lp = filt(ctx, 'lowpass', 7200, 0.7);
+      bindCutoff(ctl, lp, cl, true);
       const g2 = gz(ctx, t);
       g2.gain.linearRampToValueAtTime(v * 0.34, t + 0.0025);
       g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
@@ -627,7 +633,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       bp.connect(lp);
       lp.connect(g2);
       g2.connect(out);
-      done(env, [o, s], t + 0.2, out);
+      done(env, [o, s], t + 0.2, out, cl);
       break;
     }
 
@@ -649,14 +655,17 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       gHarm.gain.linearRampToValueAtTime(v * 0.16, t + 0.0025);
       gHarm.gain.exponentialRampToValueAtTime(0.0001, t + dec * 0.45);
       oHarm.connect(gHarm);
+      const lp = filt(ctx, 'lowpass', 2600, 0.85);
+      bindCutoff(ctl, lp, cl, true);
       const g = gz(ctx, t);
       g.gain.linearRampToValueAtTime(v * 0.54, t + 0.0025);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
       g.gain.linearRampToValueAtTime(0, t + dec + 0.004);
-      o.connect(g);
-      gHarm.connect(g);
+      o.connect(lp);
+      gHarm.connect(lp);
+      lp.connect(g);
       g.connect(out);
-      done(env, [o, oHarm], t + dec + 0.02, out);
+      done(env, [o, oHarm], t + dec + 0.02, out, cl);
       break;
     }
 
@@ -673,6 +682,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
 
       const bp = filt(ctx, 'bandpass', 1180, 1.35);
       const lp = filt(ctx, 'lowpass', 3800, 0.8);
+      bindCutoff(ctl, lp, cl, true);
       const ws = shaper(ctx, 1.25 + env.dirt * 0.9);
       const g = gz(ctx, t);
       g.gain.linearRampToValueAtTime(v * 0.28, t + 0.0025);
@@ -683,7 +693,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       bp.connect(lp);
       lp.connect(g);
       g.connect(out);
-      done(env, [car, mod], t + 0.4, out);
+      done(env, [car, mod], t + 0.4, out, cl);
       break;
     }
 
@@ -691,7 +701,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       // Authentic Underground Techno / Dark Atmospheric Tension Riser:
       // Combines a resonant analog pink-noise filter sweep (180Hz -> 3400Hz) with a key-locked
       // dark sub-harmonic swarm gliding smoothly up 1 octave (no fake 5-octave cartoon siren).
-      const dur = Math.max(0.5, n.d * env.stepDur);
+      const dur = Math.max(0.5, durSec > 0.05 ? durSec : n.d * env.stepDur);
       const rootHz = Math.min(260, Math.max(55, hz <= 110 ? hz * 2 : hz));
 
       // Layer 1: Analog pink-noise resonant air sweep
@@ -715,6 +725,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const lp = filt(ctx, 'lowpass', 240, 1.8);
       lp.frequency.setValueAtTime(240, t);
       lp.frequency.exponentialRampToValueAtTime(2600, t + dur);
+      bindCutoff(ctl, lp, cl, true);
 
       const lfo = osc(ctx, 'sine', 1.8, t);
       lfo.frequency.exponentialRampToValueAtTime(7.5, t + dur);
@@ -733,7 +744,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       lp.connect(ws);
       ws.connect(g);
       g.connect(out);
-      done(env, [sNoise, oRoot, oFifth, lfo], t + dur + 0.06, out);
+      done(env, [sNoise, oRoot, oFifth, lfo], t + dur + 0.06, out, cl);
       break;
     }
 
@@ -770,19 +781,20 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
 
       const ws = shaper(ctx, 1.45 + env.dirt * 1.1);
       const lp = filt(ctx, 'lowpass', 320, 0.85);
+      bindCutoff(ctl, lp, cl, true);
       oSub.connect(ws);
       gBody.connect(ws);
       gThud.connect(ws);
       ws.connect(lp);
       lp.connect(g);
       g.connect(out);
-      done(env, [oSub, oBody, sThud], t + 1.52, out);
+      done(env, [oSub, oBody, sThud], t + 1.52, out, cl);
       break;
     }
 
     case 'downlift': {
       // Dark Analog Sub-Brass & Filtered Air Downlifter (key-locked, warm closing filter sweep)
-      const dur = Math.max(0.5, n.d * env.stepDur);
+      const dur = Math.max(0.5, durSec > 0.05 ? durSec : n.d * env.stepDur);
       const baseHz = Math.min(220, Math.max(55, hz));
       const o1 = osc(ctx, 'sawtooth', baseHz * 2, t, -7 + drift(env, 3));
       o1.frequency.exponentialRampToValueAtTime(baseHz * 0.5, t + dur * 0.9);
@@ -796,6 +808,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       const lp = filt(ctx, 'lowpass', 2200, 1.65);
       lp.frequency.setValueAtTime(2200, t);
       lp.frequency.exponentialRampToValueAtTime(75, t + dur * 0.94);
+      bindCutoff(ctl, lp, cl, true);
 
       const ws = shaper(ctx, 1.2 + env.dirt * 0.6);
       const g = gz(ctx, t);
@@ -809,7 +822,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
       lp.connect(ws);
       ws.connect(g);
       g.connect(out);
-      done(env, [o1, o2, sAir], t + dur + 0.05, out);
+      done(env, [o1, o2, sAir], t + dur + 0.05, out, cl);
       break;
     }
 
@@ -834,7 +847,8 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
 
       const hp = filt(ctx, 'highpass', 3600, 0.7);
       const silkLp = filt(ctx, 'lowpass', 11200, 0.65);
-      const dur = Math.max(0.45, n.d * env.stepDur);
+      bindCutoff(ctl, silkLp, cl, true);
+      const dur = Math.max(0.45, durSec > 0.05 ? durSec : n.d * env.stepDur);
       const g = gz(ctx, t);
 
       if (n.p === 1) {
@@ -849,7 +863,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
         hp.connect(silkLp);
         silkLp.connect(g);
         g.connect(out);
-        done(env, [s, c1, m1, c2, m2], t + dur + 0.04, out);
+        done(env, [s, c1, m1, c2, m2], t + dur + 0.04, out, cl);
       } else {
         // Natural bronze crash splash with warm decay
         silkLp.frequency.setValueAtTime(11500, t);
@@ -862,7 +876,7 @@ export function playVoice(kind: SynthKind, env: VEnv, dest: AudioNode, t: number
         hp.connect(silkLp);
         silkLp.connect(g);
         g.connect(out);
-        done(env, [s, c1, m1, c2, m2], t + 1.62, out);
+        done(env, [s, c1, m1, c2, m2], t + 1.62, out, cl);
       }
       break;
     }

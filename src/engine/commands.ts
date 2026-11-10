@@ -60,10 +60,16 @@ function reduceCommand(p: Project, c: Command): Project {
       const tracks = p.tracks.map((t) => (t.id === c.id ? { ...t, ...c.patch } : t));
       let auto = p.auto;
       const hasLockedSec = p.sections.some((s) => s.lock);
-      if (prevTrack && !prevTrack.lock && !hasLockedSec && (c.patch.cutoff !== undefined || c.patch.res !== undefined)) {
+      if (
+        prevTrack &&
+        !prevTrack.lock &&
+        !hasLockedSec &&
+        (c.patch.cutoff !== undefined || c.patch.res !== undefined || c.patch.rev !== undefined)
+      ) {
         const cutDelta = c.patch.cutoff !== undefined ? c.patch.cutoff - prevTrack.cutoff : 0;
         const resDelta = c.patch.res !== undefined ? c.patch.res - prevTrack.res : 0;
-        if (Math.abs(cutDelta) > 1e-6 || Math.abs(resDelta) > 1e-6) {
+        const revDelta = c.patch.rev !== undefined ? c.patch.rev - prevTrack.rev : 0;
+        if (Math.abs(cutDelta) > 1e-6 || Math.abs(resDelta) > 1e-6 || Math.abs(revDelta) > 1e-6) {
           auto = p.auto.map((lane) => {
             if (lane.track !== c.id) return lane;
             if (lane.param === 'cutoff' && Math.abs(cutDelta) > 1e-6) {
@@ -71,6 +77,9 @@ function reduceCommand(p: Project, c: Command): Project {
             }
             if (lane.param === 'res' && Math.abs(resDelta) > 1e-6) {
               return { ...lane, pts: lane.pts.map((pt) => ({ ...pt, v: +clamp(pt.v + resDelta, 0, 1).toFixed(3) })) };
+            }
+            if (lane.param === 'rev' && Math.abs(revDelta) > 1e-6) {
+              return { ...lane, pts: lane.pts.map((pt) => ({ ...pt, v: +clamp(pt.v + revDelta, 0, 1).toFixed(3) })) };
             }
             return lane;
           });

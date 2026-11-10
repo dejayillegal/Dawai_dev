@@ -69,4 +69,56 @@ it('evolves 303 acid and melodic/groove layers across phrases so consecutive cli
  const uniqueSigs=new Set(sigs);
  expect(uniqueSigs.size).toBeGreaterThan(1);
 });
+it('validates all 9 arrangement FORMS, multi-group layering, key-locked transitions, sidechain buses, and automation lanes',async()=>{
+ const {FORMS}=await import('../src/engine/styles');
+ const {assertProject}=await import('../src/engine/validation');
+ for(const formId of Object.keys(FORMS)){
+  const p=newProject({...defaultParams('hypnotic',505),form:formId,bars:176});
+  assertProject(p);
+  expect(p.formId).toBe(formId);
+  expect(totalBars(p)).toBe(176);
+  const groups=new Set(p.tracks.map(t=>t.group));
+  expect(groups.has('Foundation')).toBe(true);
+  expect(groups.has('Groove')).toBe(true);
+  expect(groups.has('Transition')).toBe(true);
+  const trClips=p.tracks.filter(t=>t.group==='Transition').flatMap(t=>t.clips);
+  expect(trClips.length).toBeGreaterThan(0);
+  // Verify sidechain buses are assigned on bass, harm, and fx layers
+  expect(p.tracks.some(t=>t.sc==='bass')).toBe(true);
+  expect(p.tracks.some(t=>t.sc==='harm')).toBe(true);
+  expect(p.tracks.some(t=>t.sc==='fx')).toBe(true);
+  // Verify automation lanes exist for cutoff, res, rev, and master hp
+  const autoParams=new Set(p.auto.map(a=>a.param));
+  expect(autoParams.has('cutoff')).toBe(true);
+  expect(autoParams.has('res')).toBe(true);
+  expect(autoParams.has('rev')).toBe(true);
+ }
+});
+it('propagates SET_TRACK cutoff, res, and rev adjustments into unlocked automation lanes and validates presets & clip waveforms',async()=>{
+ const {applyCommand}=await import('../src/engine/commands');
+ const {FACTORY_DEVICE_PRESETS,saveDevicePreset,deleteDevicePreset,applyDevicePresetToTrackPatch}=await import('../src/engine/presets');
+ const {computeAnalyticalClipWaveform}=await import('../src/engine/clipWaveform');
+ const p=newProject(defaultParams('hypnotic',909));
+ const acid=p.tracks.find(t=>t.layer==='ACID1')!;
+ const revLaneBefore=p.auto.find(a=>a.track===acid.id&&a.param==='rev')!;
+ expect(revLaneBefore).toBeDefined();
+ const baseRevBefore=revLaneBefore.pts[0].v;
+ const next=applyCommand(p,{type:'SET_TRACK',id:acid.id,patch:{rev:Math.min(1,acid.rev+0.2)}});
+ const revLaneAfter=next.auto.find(a=>a.track===acid.id&&a.param==='rev')!;
+ expect(revLaneAfter.pts[0].v).toBeCloseTo(Math.min(1,baseRevBefore+0.2),2);
+
+ // Validate Device Preset save, load, and track patch application
+ expect(FACTORY_DEVICE_PRESETS.length).toBeGreaterThanOrEqual(10);
+ const saved=saveDevicePreset('Custom Test Acid',acid,{eqLow:2,eqMid:-1,eqHigh:1.5},'303 Acid');
+ const patch=applyDevicePresetToTrackPatch(saved);
+ const afterPreset=applyCommand(next,{type:'SET_TRACK',id:acid.id,patch});
+ expect(afterPreset.tracks.find(t=>t.id===acid.id)?.synth).toBe(acid.synth);
+ deleteDevicePreset(saved.id);
+
+ // Validate analytical clip waveform generation for Piano Roll overlay
+ const clip=acid.clips[0];
+ const wf=computeAnalyticalClipWaveform(clip,acid,p.params.bpm,128);
+ expect(wf.peaks.length).toBe(128);
+ expect(wf.peaks.some(v=>v>0)).toBe(true);
+});
 

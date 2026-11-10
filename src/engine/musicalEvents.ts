@@ -1,7 +1,7 @@
 import type {Track,ComposeParams,Note,Project} from './types';
 import {STEPS_PER_BAR} from './types';
 import {clamp,hash} from './theory';
-const SUSTAINED=new Set(['sub','rumble','midbass','acid','stab','lead','arp','pad','dubchord','drone','noise']);
+const SUSTAINED=new Set(['sub','rumble','midbass','acid','stab','lead','arp','pad','dubchord','drone','noise','riser','downlift']);
 export interface MusicalEvent {trackId:string;clipId:string;cycle:number;note:Note;startStep:number;durationSteps:number;chased:boolean;sourceStep:number}
 export const audibleTrack=(p:Project,t:Track)=>!t.mute&&(!p.tracks.some(t=>t.solo)||t.solo);
 export function needsSidechainKey(p:Project){

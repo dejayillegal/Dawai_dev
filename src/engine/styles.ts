@@ -92,7 +92,7 @@ export const STYLES: Record<string, StyleDef> = {
   dub: {
     id: 'dub', name: 'Dub Techno', desc: '122–128 BPM · min7/9 chords in tape delay, cavernous reverb, 12/16/24-bar overlaps.',
     bpm: [122, 128], scales: ['dorian', 'minor'],
-    layers: ['KICK', 'SUB', 'HAT_C', 'HAT_O', 'SHAKER', 'PERC1', 'DUB', 'PAD', 'DRONE', 'ACID1', 'TEX', 'CRACKLE', 'RISER', 'IMPACT', 'DOWNLIFT'],
+    layers: ['KICK', 'SUB', 'HAT_C', 'HAT_O', 'SHAKER', 'PERC1', 'DUB', 'PAD', 'DRONE', 'ACID1', 'TEX', 'CRACKLE', ...ATOMS],
     forms: ['dub', 'tool'], swing: 0.56, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [12, 24], prog: [0, 3, 0, 6], dirt: 0.1,
     thr: { DUB: [0.1, 0.4], PAD: [0.1, 0.35], HAT_C: [0.3, 0.6], ACID1: [0.55, 0.9] },
   },
@@ -111,7 +111,7 @@ export const STYLES: Record<string, StyleDef> = {
   deep: {
     id: 'deep', name: 'Deep / Experimental', desc: '124–132 BPM · odd phrase lengths, clang percussion, drones and arps.',
     bpm: [124, 132], scales: ['octatonic', 'dorian', 'harmonicMinor'],
-    layers: ['KICK', 'RUMBLE', 'HAT_O', 'SHAKER', 'PERC2', 'CLANG', 'DUB', 'ARP', 'DRONE', 'PAD', 'TEX', 'CRACKLE', 'RISER', 'IMPACT', 'DOWNLIFT', 'CRASH'],
+    layers: ['KICK', 'RUMBLE', 'HAT_O', 'SHAKER', 'PERC2', 'CLANG', 'DUB', 'ARP', 'DRONE', 'PAD', 'TEX', 'CRACKLE', ...ATOMS],
     forms: ['dub', 'tool', 'acid'], swing: 0.58, cut16: 0.5, cut32: 1, void: 1, kick: 'four', poly: [20, 24, 28], prog: [0, 2, 0, 5], dirt: 0.35,
     thr: { RUMBLE: [0.1, 0.4], DUB: [0.15, 0.45] },
   },

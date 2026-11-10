@@ -155,8 +155,16 @@ describe('All 27 Synth & FX Voices Execution & Parameter Control', () => {
       }).not.toThrow();
 
       // Verify sources were registered in the voice environment
-      expect(started).toBeGreaterThan(0);
+      expect(started).toBe(2);
       expect(sources.size).toBeGreaterThan(0);
+
+      // Trigger onended on primary sources and verify zero leaked sources or ctl connections
+      for (const s of [...sources]) {
+        const mockSrc = s as unknown as MockNode;
+        if (mockSrc.onended) mockSrc.onended();
+      }
+      expect(ended).toBe(2);
+      expect(sources.size).toBe(0);
     });
   }
 
